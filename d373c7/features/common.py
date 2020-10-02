@@ -9,6 +9,15 @@ def not_implemented(class_):
     raise NotImplementedError(f'Feature problem. Not defined for class {class_.__class__.name}')
 
 
+class FeatureDefinitionException(Exception):
+    """ Exception thrown when a the Definition of a feature fails
+    Args:
+        message: A free form text message describing the error
+    """
+    def __init__(self, message: str):
+        super().__init__("Error Defining Feature: " + message)
+
+
 class FeatureType:
     """ Defines the data type of a particular Feature. See below for the specific implementations"""
     def __init__(self, key: int, name: str):
@@ -82,6 +91,7 @@ FEATURE_TYPE_BOOL: FeatureType = FeatureTypeBool(11, 'INT_8', 8)
 
 class Feature:
     """ Base Feature class. All features will inherit from this class.
+
     Args:
         name: A name for the feature
         f_type: The type of the feature. Must be a FeatureType class instance

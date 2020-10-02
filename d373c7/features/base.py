@@ -4,17 +4,10 @@ Definition of some fairly straight forward Features
 """
 import logging
 from typing import List
-from d373c7.features.common import Feature, FeatureType
+from ..features.common import Feature, FeatureType, FeatureDefinitionException
+
+
 logger = logging.getLogger(__name__)
-
-
-class FeatureDefinitionException(Exception):
-    """ Exception thrown when a the Definition of a feature fails
-    Args:
-        message: A free form text message describing the error
-    """
-    def __init__(self, message: str):
-        super().__init__("Error Defining Feature: " + message)
 
 
 def not_implemented(feature: Feature):
@@ -22,7 +15,7 @@ def not_implemented(feature: Feature):
 
 
 class FeatureSource(Feature):
-    """" A feature found in a source. I.e a file or message or JSON or other. This is the most basic feature.
+    """"A feature found in a source. I.e a file or message or JSON or other. This is the most basic feature.
     Args:
         name: A name for the feature
         f_type: The type of the feature. This must be an instance of the FeatureType class
@@ -59,3 +52,7 @@ class FeatureSource(Feature):
     @property
     def default(self) -> any:
         return self._default
+
+
+class FeatureVirtual(Feature):
+    pass
