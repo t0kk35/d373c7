@@ -51,7 +51,7 @@ class EnginePandasNumpy(EngineContext):
         EngineContext.__init__(self)
         logger.info(f'Pandas Version : {pd.__version__}')
         logger.info(f'Numpy Version : {np.__version__}')
-        self.__num_threads = num_threads
+        self._num_threads = num_threads
         self.one_hot_prefix = '__'
 
     def _val_features_in_data_frame(self, df: pd.DataFrame, tensor_def: TensorDefinition):
@@ -82,6 +82,10 @@ class EnginePandasNumpy(EngineContext):
         """
         if len(format_codes) > 1:
             raise EnginePandaNumpyException(f'All date formats should be the same. Got {format_codes}')
+
+    @property
+    def num_threads(self):
+        return self._num_threads
 
     @staticmethod
     def panda_type(feature: Feature, default: str = None) -> str:
@@ -120,7 +124,7 @@ class EnginePandasNumpy(EngineContext):
         :return: A Panda with the fields as defined in the tensor_def.
         """
         logger.info(f'Building Panda for : {tensor_def.name} from DataFrame')
-        all_features = tensor_def.embedded_features()
+        all_features = tensor_def.embedded_features
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
 
         # Make sure we can make all fields
@@ -167,7 +171,7 @@ class EnginePandasNumpy(EngineContext):
         if not file_instance.exists():
             raise EnginePandaNumpyException(f' path {file} does not exist or is not a file')
         logger.info(f'Building Panda for : {tensor_def.name} from file {file}')
-        all_features = tensor_def.embedded_features()
+        all_features = tensor_def.embedded_features
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
         source_feature_names = [field.name for field in source_features]
         source_feature_types = {feature.name: EnginePandasNumpy.panda_type(feature) for feature in source_features}
@@ -197,8 +201,8 @@ class EnginePandasNumpy(EngineContext):
         df = self.from_df(tensor_def, df, inference)
         return df
 
-    def reshape(self, df: pd.DataFrame, tensor_def: TensorDefinition):
-        """Reshape function. Can be used to reshuffle the columns in a Panda. The columns will be retured in the exact
+    def reshape(self, tensor_def: TensorDefinition, df: pd.DataFrame):
+        """Reshape function. Can be used to reshuffle the columns in a Panda. The columns will be returned in the exact
         order as the features of the tensor definition. Columns that are not in the tensor definition as feature will
         be dropped.
 

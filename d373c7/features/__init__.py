@@ -7,3 +7,4 @@ from .common import FEATURE_TYPE_INT_16, FEATURE_TYPE_CATEGORICAL, FEATURE_TYPE_
 from .common import FEATURE_TYPE_FLOAT_64, FEATURE_TYPE_INT_32, FEATURE_TYPE_INT_64, FEATURE_TYPE_INTEGER
 from .common import FEATURE_TYPE_STRING
 from .base import FeatureSource
+from .tensor import TensorDefinition

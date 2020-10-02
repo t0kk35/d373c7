@@ -25,6 +25,7 @@ class TensorDefinition:
     def features(self) -> List[Feature]:
         return self.__features_list
 
+    @property
     def embedded_features(self) -> List[Feature]:
         # Return the base features + all features embedded in the base features.
         base_features = self.__features_list

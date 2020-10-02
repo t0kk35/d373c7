@@ -55,4 +55,6 @@ class FeatureSource(Feature):
 
 
 class FeatureVirtual(Feature):
+    # Fail. Needs implementation
     pass
+
