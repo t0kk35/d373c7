@@ -90,7 +90,7 @@ FEATURE_TYPE_BOOL: FeatureType = FeatureTypeBool(11, 'INT_8', 8)
 
 
 class Feature:
-    """ Base Feature class. All features will inherit from this class.
+    """Base Feature class. All features will inherit from this class.
 
     Args:
         name: A name for the feature
@@ -114,4 +114,14 @@ class Feature:
 
     @property
     def embedded_features(self) -> List['Feature']:
+        return not_implemented(self)
+
+
+class FeatureInferenceAttributes(Feature):
+    """Place holder class for features that have specific inference attributes. Inference attributes are attributes
+    that are set during training. During inference, the attributes which have been set at training will be used.
+    This is needed to have consistency between training and inference. For instance for all sorts of normalisers.
+    """
+    @property
+    def inference_ready(self) -> bool:
         return not_implemented(self)

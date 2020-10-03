@@ -14,7 +14,7 @@ from .common import EngineContext
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL
 from ..features.base import FeatureSource
 from ..features.tensor import TensorDefinition
-from ..features.expanders import FeatureExpander
+from ..features.expanders import FeatureExpander, FeatureOneHot
 
 logger = logging.getLogger(__name__)
 
@@ -126,10 +126,12 @@ class EnginePandasNumpy(EngineContext):
         logger.info(f'Building Panda for : {tensor_def.name} from DataFrame')
         all_features = tensor_def.embedded_features
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
+        one_hot_features = [field for field in all_features if isinstance(field, FeatureOneHot)]
 
         # Make sure we can make all fields
         unknown_fields = [field for field in all_features
-                          if field not in source_features]
+                          if field not in source_features
+                          and field not in one_hot_features]
 
         if len(unknown_fields) != 0:
             raise EnginePandaNumpyException(
@@ -139,6 +141,7 @@ class EnginePandasNumpy(EngineContext):
 
         # Start processing
         df = _FeatureProcessor.process_source_feature(df, source_features)
+        df = _FeatureProcessor.process_one_hot_feature(df, one_hot_features, inference, self.one_hot_prefix)
 
         # Only return base features in the tensor_definition. No need to return the embedded features.
         # Remember that expander features can contain multiple columns.
@@ -238,4 +241,20 @@ class _FeatureProcessor:
                     if feature.default not in df[feature.name].cat.categories.values:
                         df[feature.name].cat.add_categories(feature.default, inplace=True)
                 df[feature.name].fillna(feature.default, inplace=True)
+        return df
+
+    @staticmethod
+    def process_one_hot_feature(df: pd.DataFrame, features: List[FeatureOneHot], inference: bool,
+                                one_hot_prefix: str) -> pd.DataFrame:
+        if not inference:
+            # Use pandas function to get the one-hot features. Set the expand names inference attribute
+            columns = [feature.base_feature.name for feature in features]
+            df = pd.get_dummies(df, prefix_sep=one_hot_prefix, columns=columns)
+            for oh in features:
+                oh.expand_names = [c for c in df.columns if c.startswith(oh.base_feature.name + one_hot_prefix)]
+        else:
+            # Need to make sure we expand the same names
+            # TODO need custom logic here.
+            pass
+
         return df

@@ -38,8 +38,8 @@ class FeatureSource(Feature):
     def __hash__(self):
         return hash(self.name)
 
-    def __str__(self):
-        return f'Source Feature {self.name}'
+    def __repr__(self):
+        return f'Source Feature {self.name}/{self.type}'
 
     @property
     def embedded_features(self) -> List[Feature]:
@@ -55,6 +55,48 @@ class FeatureSource(Feature):
 
 
 class FeatureVirtual(Feature):
-    # Fail. Needs implementation
-    pass
+    """A place holder feature without actual definition. Sometimes we might want to refer to a feature that is not
+    an actual feature. Fluffy, true, this is a feature without actually being one.
+    Virtual features should be created by
+    - Either providing a base feature to virtualize
+    - Or providing a name and f_type
 
+    Args:
+        feature: A feature to virtualize
+        name: The name for the virtual feature.
+        f_type: The type of the virtual feature.
+    """
+    @staticmethod
+    def _val_feature_or_name(feature: Feature, name: str, f_type: FeatureType):
+        if feature is not None:
+            if name is not None and f_type is not None:
+                raise FeatureDefinitionException(
+                    f'Virtual feature creation should be done with either a feature or a name and type'
+                )
+        if feature is None:
+            if name is None or f_type is None:
+                raise FeatureDefinitionException(
+                    f'Virtual Feature creation, if no feature is given, then a name and type should be provided'
+                )
+
+    def __init__(self, feature: Feature = None, name: str = None, f_type: FeatureType = None):
+        self._val_feature_or_name(feature, name, f_type)
+        feature_name = feature.name if feature is not None else name
+        feature_type = feature.type if feature is not None else f_type
+        Feature.__init__(self, feature_name, feature_type)
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.name == other.name
+        else:
+            return False
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def __repr__(self):
+        return f'Virtual Feature {self.name}/{self.type}'
+
+    @property
+    def embedded_features(self) -> List[Feature]:
+        return not_implemented(self)
