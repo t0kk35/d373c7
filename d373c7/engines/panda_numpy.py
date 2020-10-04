@@ -253,8 +253,21 @@ class _FeatureProcessor:
             for oh in features:
                 oh.expand_names = [c for c in df.columns if c.startswith(oh.base_feature.name + one_hot_prefix)]
         else:
-            # Need to make sure we expand the same names
-            # TODO need custom logic here.
-            pass
+            # During inference the values might be different. Need to make sure the number of columns matches
+            # the training values. Values that were not seen during training will be removed when only base_features
+            # are selected. Values that were seen during training but not at inference need to be added.
+            columns = [feature.base_feature.name for feature in features]
+            df = pd.get_dummies(df, prefix_sep=one_hot_prefix, columns=columns)
+            n_defined = []
+            for f in features:
+                defined = [col for col in df.columns if col.startswith(f.base_feature.name + one_hot_prefix)]
+                x = [n for n in f.expand_names if n not in defined]
+                n_defined.extend(x)
+            for nd in n_defined:
+                kwargs = {nd: 0}
+                df = df.assign(**kwargs).astype('int8')
+        return df
 
+    @staticmethod
+    def process_index_feature(df: pd.DataFrame, features, inference: bool) -> pd.DataFrame:
         return df
