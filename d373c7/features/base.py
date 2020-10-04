@@ -31,12 +31,12 @@ class FeatureSource(Feature):
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
-            return self.name == other.name
+            return self.name == other.name and self.type == other.type
         else:
             return False
 
     def __hash__(self):
-        return hash(self.name)
+        return hash(self.name) + hash(self.type)
 
     def __repr__(self):
         return f'Source Feature {self.name}/{self.type}'
@@ -69,7 +69,7 @@ class FeatureVirtual(Feature):
     @staticmethod
     def _val_feature_or_name(feature: Feature, name: str, f_type: FeatureType):
         if feature is not None:
-            if name is not None and f_type is not None:
+            if name is not None or f_type is not None:
                 raise FeatureDefinitionException(
                     f'Virtual feature creation should be done with either a feature or a name and type'
                 )
@@ -87,16 +87,16 @@ class FeatureVirtual(Feature):
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
-            return self.name == other.name
+            return self.name == other.name and self.type == other.type
         else:
             return False
 
     def __hash__(self):
-        return hash(self.name)
+        return hash(self.name) + hash(self.type)
 
     def __repr__(self):
         return f'Virtual Feature {self.name}/{self.type}'
 
     @property
     def embedded_features(self) -> List[Feature]:
-        return not_implemented(self)
+        return []

@@ -29,7 +29,9 @@ class FeatureNormalize(FeatureInferenceAttributes):
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
-            return self.name == other.name and self.base_feature == other.base_feature
+            return self.name == other.name and \
+                   self.base_feature == other.base_feature and \
+                   self.type == other.type
         else:
             return False
 

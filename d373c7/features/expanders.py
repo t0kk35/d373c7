@@ -55,12 +55,14 @@ class FeatureOneHot(FeatureExpander):
 
     def __eq__(self, other):
         if isinstance(other, self.__class__):
-            return self.name == other.name and self.base_feature == other.base_feature
+            return self.name == other.name and \
+                   self.base_feature == other.base_feature and \
+                   self.type == other.type
         else:
             return False
 
     def __hash__(self):
-        return hash(self.name) + hash(self.base_feature)
+        return hash(self.name) + hash(self.base_feature) + hash(self.type)
 
     def __repr__(self):
         return f'OneHot Feature. {self.name}/{self.type}. Base {self.base_feature.name}'
@@ -82,7 +84,10 @@ class FeatureOneHot(FeatureExpander):
         self._e_names = names
 
     def expand(self) -> List[FeatureVirtual]:
-        return [FeatureVirtual(name=n, f_type=FEATURE_TYPE_INT_8) for n in self.expand_names]
+        if self.expand_names is not None:
+            return [FeatureVirtual(name=n, f_type=FEATURE_TYPE_INT_8) for n in self.expand_names]
+        else:
+            return []
 
     @property
     def inference_ready(self) -> bool:
