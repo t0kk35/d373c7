@@ -81,18 +81,84 @@ class TestOneHot(unittest.TestCase):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(ft.TensorDefinition('All', [fc]), file)
-            mcc_v = sorted(list(set(df['MCC'])))
-            mcc_c = sorted(['MCC' + '__' + m for m in mcc_v])
+            mcc_v = df['MCC'].unique()
+            mcc_c = ['MCC' + '__' + m for m in mcc_v]
             df = e.from_df(ft.TensorDefinition('Derived', [fo]), df, False)
             self.assertEqual(len(df.columns), len(mcc_v), f'Col number must match values {len(df.columns), len(mcc_v)}')
-            self.assertListEqual(sorted(list(df.columns)), mcc_c, f'Names of columns must match values {df.columns}')
+            self.assertListEqual(list(df.columns), mcc_c, f'Names of columns must match values {df.columns}')
             self.assertEqual(fo.inference_ready, True, f'One Hot feature should be ready for inference')
-            self.assertListEqual(sorted(fo.expand_names), mcc_c, f'Expanded names should match the column names')
+            self.assertListEqual(fo.expand_names, mcc_c, f'Expanded names should match the column names')
             vt = set([vf for vf in fo.expand()])
             self.assertEqual(len(vt), len(mcc_v), f'Should have gotten {len(mcc_v)} expanded features')
             self.assertIsInstance(vt.pop(), ft.FeatureVirtual, f'Expanded features should be Virtual Features')
-            vn = sorted([vf.name for vf in fo.expand()])
+            vn = [vf.name for vf in fo.expand()]
             self.assertListEqual(vn, mcc_c, f'Names of the Virtual Features must match columns')
+
+    def test_read_base_inference_removed_element(self):
+        fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
+        fo = ft.FeatureOneHot('MCC_OH', fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df_c = e.from_csv(ft.TensorDefinition('All', [fc]), file)
+            mcc_v = df_c['MCC'].unique()
+            mcc_c = ['MCC' + '__' + m for m in mcc_v]
+            # Set derived Feature
+            e.from_df(ft.TensorDefinition('Derived', [fo]), df_c, False)
+            # Now Remove a line from the original csv panda and do an inference run.
+            df_c = df_c.iloc[:-1]
+            df = e.from_df(ft.TensorDefinition('Derived', [fo]), df_c, True)
+            self.assertEqual(len(df.columns), len(mcc_v), f'Col number must match values {len(df.columns), len(mcc_v)}')
+            self.assertListEqual(list(df.columns), mcc_c, f'Names of columns must match values {df.columns}')
+            self.assertEqual(fo.inference_ready, True, f'One Hot feature should be ready for inference')
+            self.assertListEqual(fo.expand_names, mcc_c, f'Expanded names should match the column names')
+
+    def test_rest_base_inference_added_element(self):
+        fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
+        fo = ft.FeatureOneHot('MCC_OH', fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df_c = e.from_csv(ft.TensorDefinition('All', [fc]), file)
+            # Remove row and set variables. Also remove from categories!
+            df_r = df_c.iloc[1:].copy()
+            df_r['MCC']  = df_c['MCC'].cat.remove_categories(df_c['MCC'][0])
+            mcc_v = df_r['MCC'].unique()
+            mcc_c = ['MCC' + '__' + m for m in mcc_v]
+            # Run non-inference on removed panda
+            e.from_df(ft.TensorDefinition('Derived', [fo]), df_r, False)
+            # And inference on original
+            df = e.from_df(ft.TensorDefinition('Derived', [fo]), df_c, True)
+            self.assertEqual(len(df.columns), len(mcc_v), f'Col number must match values {len(df.columns), len(mcc_v)}')
+            self.assertListEqual(list(df.columns), mcc_c, f'Names of columns must match values {df.columns}')
+            self.assertEqual(fo.inference_ready, True, f'One Hot feature should be ready for inference')
+            self.assertListEqual(fo.expand_names, mcc_c, f'Expanded names should match the column names')
+
+
+class TestNormalizeScale(unittest.TestCase):
+    """"Derived Features. Normalize Scale feature tests. We'll use the from_df function for this
+    """
+    def test_read_base_non_inference(self):
+        fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        s_name = 'AmountScale'
+        s_type = ft.FEATURE_TYPE_FLOAT_32
+        fs = ft.FeatureNormalizeScale(s_name, s_type, fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(ft.TensorDefinition('All', [fc]), file)
+            mn = df['Amount'].min()
+            mx = df['Amount'].max()
+            df = e.from_df(ft.TensorDefinition('Derived', [fs]), df, False)
+            self.assertEqual(len(df.columns), 1, f'Only one columns should have been returned')
+            self.assertEqual(df.columns[0], s_name, f'Column name is not correct {df.columns[0]}')
+            self.assertEqual(fs.inference_ready, True, f'Feature should now be inference ready')
+            self.assertEqual(fs.maximum, mx, f'Maximum not set correctly {fs.maximum}')
+            self.assertEqual(fs.minimum, mn, f'Minimum not set correctly {fs.maximum}')
+
+
+class TestNormalizeStandard(unittest.TestCase):
+    """"Derived Features. Normalize Standard feature tests. We'll use the from_df function for this
+    """
+    def test_read_base_non_inference(self):
+        pass
 
 
 class TestReshape(unittest.TestCase):

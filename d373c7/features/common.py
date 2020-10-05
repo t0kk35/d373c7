@@ -19,7 +19,7 @@ class FeatureDefinitionException(Exception):
 
 
 class FeatureType:
-    """ Defines the data type of a particular Feature. See below for the specific implementations"""
+    """Defines the data type of a particular Feature. See below for the specific implementations"""
     def __init__(self, key: int, name: str):
         self._key = key
         self._name = name
@@ -42,7 +42,6 @@ class FeatureType:
             return ft1
         else:
             return ft2
-
 
 class FeatureTypeString(FeatureType):
     pass
@@ -87,6 +86,27 @@ FEATURE_TYPE_INT_16: FeatureType = FeatureTypeInteger(9, 'INT_16', 16)
 FEATURE_TYPE_INT_32: FeatureType = FEATURE_TYPE_INTEGER
 FEATURE_TYPE_INT_64: FeatureType = FeatureTypeInteger(10, 'INT_64', 64)
 FEATURE_TYPE_BOOL: FeatureType = FeatureTypeBool(11, 'INT_8', 8)
+
+
+class FeatureCategory:
+    """Describes the feature category. For instance if the feature is nominal, binary, ordinal, interval etc...
+    """
+    def __init__(self, key: int, name: str):
+        self._key = key
+        self._name = name
+
+    @property
+    def key(self) -> int:
+        return self._key
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+
+FEATURE_CATEGORY_BINARY: FeatureCategory = FeatureCategory(0, 'BINARY')
+FEATURE_CATEGORY_NOMINAL: FeatureCategory = FeatureCategory(1, 'NOMINAL')
+FEATURE_CATEGORY_INTERVAL: FeatureCategory = FeatureCategory(2, 'INTERVAL')
 
 
 class Feature:

@@ -11,7 +11,7 @@ import numpy as np
 from functools import partial
 from typing import Dict, List
 from .common import EngineContext
-from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL
+from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL, FeatureInferenceAttributes
 from ..features.base import FeatureSource
 from ..features.tensor import TensorDefinition
 from ..features.expanders import FeatureExpander, FeatureOneHot
@@ -83,6 +83,16 @@ class EnginePandasNumpy(EngineContext):
         if len(format_codes) > 1:
             raise EnginePandaNumpyException(f'All date formats should be the same. Got {format_codes}')
 
+    @staticmethod
+    def _val_ready_for_inference(features: List[Feature], inference: bool):
+        if inference:
+            for f in [f for f in features if isinstance(f, FeatureInferenceAttributes)]:
+                if not f.inference_ready:
+                    raise EnginePandaNumpyException(
+                        f'Feature {f.name} not ready for inference. Make sure to first do a run with inference set '
+                        f'to false or load saved features so the inference attributes are set'
+                    )
+
     @property
     def num_threads(self):
         return self._num_threads
@@ -125,6 +135,7 @@ class EnginePandasNumpy(EngineContext):
         """
         logger.info(f'Building Panda for : {tensor_def.name} from DataFrame')
         all_features = tensor_def.embedded_features
+        self._val_ready_for_inference(all_features, inference)
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
         one_hot_features = [field for field in all_features if isinstance(field, FeatureOneHot)]
 
@@ -254,18 +265,28 @@ class _FeatureProcessor:
                 oh.expand_names = [c for c in df.columns if c.startswith(oh.base_feature.name + one_hot_prefix)]
         else:
             # During inference the values might be different. Need to make sure the number of columns matches
-            # the training values. Values that were not seen during training will be removed when only base_features
-            # are selected. Values that were seen during training but not at inference need to be added.
+            # the training values. Values that were not seen during training will be removed.
+            # Values that were seen during training but not at inference need to be added with all zeros
             columns = [feature.base_feature.name for feature in features]
             df = pd.get_dummies(df, prefix_sep=one_hot_prefix, columns=columns)
+            # Add features seen at non-inference (training), but not at inference
             n_defined = []
             for f in features:
                 defined = [col for col in df.columns if col.startswith(f.base_feature.name + one_hot_prefix)]
                 x = [n for n in f.expand_names if n not in defined]
                 n_defined.extend(x)
-            for nd in n_defined:
-                kwargs = {nd: 0}
+            if len(n_defined) > 0:
+                kwargs = {nd: 0 for nd in n_defined}
                 df = df.assign(**kwargs).astype('int8')
+            # Remove features not seen at non-inference (training) but seen at inference
+            n_defined = []
+            for f in features:
+                x = [col for col in df.columns
+                     if col.startswith(f.base_feature.name + one_hot_prefix)
+                     and col not in f.expand_names]
+                n_defined.extend(x)
+            if len(n_defined) > 0:
+                df = df.drop(n_defined, axis=1)
         return df
 
     @staticmethod

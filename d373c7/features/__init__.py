@@ -6,6 +6,7 @@ from .common import FEATURE_TYPE_FLOAT, FEATURE_TYPE_FLOAT_32, FEATURE_TYPE_BOOL
 from .common import FEATURE_TYPE_INT_16, FEATURE_TYPE_CATEGORICAL, FEATURE_TYPE_DATE, FEATURE_TYPE_DATE_TIME
 from .common import FEATURE_TYPE_FLOAT_64, FEATURE_TYPE_INT_32, FEATURE_TYPE_INT_64, FEATURE_TYPE_INTEGER
 from .common import FEATURE_TYPE_STRING
+from .common import FEATURE_CATEGORY_BINARY, FEATURE_CATEGORY_NOMINAL, FEATURE_CATEGORY_INTERVAL
 from .common import FeatureDefinitionException
 from .base import FeatureSource, FeatureVirtual
 from .expanders import FeatureOneHot
