@@ -10,5 +10,5 @@ from .common import FEATURE_CATEGORY_BINARY, FEATURE_CATEGORY_NOMINAL, FEATURE_C
 from .common import FeatureDefinitionException
 from .base import FeatureSource, FeatureVirtual
 from .expanders import FeatureOneHot
-from .normalisers import FeatureNormalizeScale, FeatureNormalizeStandard
+from .normalizers import FeatureNormalizeScale, FeatureNormalizeStandard
 from .tensor import TensorDefinition

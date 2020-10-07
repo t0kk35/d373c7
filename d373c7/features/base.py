@@ -4,7 +4,8 @@ Definition of some fairly straight forward Features
 """
 import logging
 from typing import List
-from ..features.common import Feature, FeatureType, FeatureDefinitionException
+from ..features.common import Feature, FeatureType, FeatureDefinitionException, FeatureInferenceAttributes
+from ..features.common import FeatureTypeString, FeatureTypeInteger
 
 
 logger = logging.getLogger(__name__)
@@ -100,3 +101,72 @@ class FeatureVirtual(Feature):
     @property
     def embedded_features(self) -> List[Feature]:
         return []
+
+
+class FeatureIndex(FeatureInferenceAttributes):
+    """Indexer feature. It will turn a specific input field (the base_feature) into an index. For instance 'DE'->1,
+    'FR'->2, 'GB'->3 etc... The index will have an integer type and is ideal to model in embeddings.
+    Args:
+        name: A name for the index feature
+        f_type: The type of the feature. This must be an instance of the FeatureTypeInteger class (i.e integer based)
+        base_feature: The feature which will be indexed. This should be either string or integer based.
+    """
+    @staticmethod
+    def _val_type_is_string_or_integer(base_feature: Feature):
+        ft = base_feature.type
+        if not isinstance(ft, FeatureTypeString) and not isinstance(ft, FeatureTypeInteger):
+            raise FeatureDefinitionException(
+                f'The base feature parameter of an indexing feature must be a string-type or integer-type. '
+                f'Found [{type(base_feature.type)}]'
+            )
+
+    @staticmethod
+    def _val_type_is_integer_based(f_type: FeatureType):
+        if not isinstance(f_type, FeatureTypeInteger):
+            raise FeatureDefinitionException(
+                f'The feature type of an index feature should be integer based, not {f_type}'
+            )
+
+    def __init__(self, name: str, f_type: FeatureType, base_feature: Feature):
+        self._val_type_is_string_or_integer(base_feature)
+        self._val_type_is_integer_based(f_type)
+        Feature.__init__(self, name, f_type)
+        self._dict = None
+        self._base_feature = base_feature
+
+    def __len__(self):
+        return len(self.dictionary)
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.name == other.name and \
+                   self.base_feature == other.base_feature and \
+                   self.type == other.type
+        else:
+            return False
+
+    def __hash__(self):
+        return hash(self.name) + hash(self.base_feature) + hash(self.type)
+
+    def __repr__(self):
+        return f'IndexFeature. {self.name}/{self.type}. Base {self.base_feature.name}'
+
+    @property
+    def base_feature(self) -> Feature:
+        return self._base_feature
+
+    @property
+    def dictionary(self) -> dict:
+        return self._dict
+
+    @dictionary.setter
+    def dictionary(self, dictionary: dict):
+        self._dict = dictionary
+
+    @property
+    def embedded_features(self) -> List[Feature]:
+        return [self._base_feature]
+
+    @property
+    def inference_ready(self) -> bool:
+        return self._dict is not None

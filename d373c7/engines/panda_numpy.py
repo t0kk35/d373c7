@@ -12,9 +12,11 @@ from functools import partial
 from typing import Dict, List
 from .common import EngineContext
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL, FeatureInferenceAttributes
-from ..features.base import FeatureSource
+from ..features.common import FeatureTypeInteger
+from ..features.base import FeatureSource, FeatureIndex
 from ..features.tensor import TensorDefinition
 from ..features.expanders import FeatureExpander, FeatureOneHot
+from ..features.normalizers import FeatureNormalize, FeatureNormalizeScale, FeatureNormalizeStandard
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,13 @@ class EnginePandasNumpy(EngineContext):
 
     @staticmethod
     def _val_ready_for_inference(features: List[Feature], inference: bool):
+        """Validation function to check if all feature are ready for inference. Some features have specific inference
+        attributes that need to be set before an inference file can be made.
+
+        :param features: A list of features to check for 'ready inference attributes'
+        :param inference: Indication if we are inference mode or not
+        :return: None
+        """
         if inference:
             for f in [f for f in features if isinstance(f, FeatureInferenceAttributes)]:
                 if not f.inference_ready:
@@ -137,11 +146,15 @@ class EnginePandasNumpy(EngineContext):
         all_features = tensor_def.embedded_features
         self._val_ready_for_inference(all_features, inference)
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
+        normalizer_features = [field for field in all_features if isinstance(field, FeatureNormalize)]
+        index_features = [field for field in all_features if isinstance(field, FeatureIndex)]
         one_hot_features = [field for field in all_features if isinstance(field, FeatureOneHot)]
 
         # Make sure we can make all fields
         unknown_fields = [field for field in all_features
                           if field not in source_features
+                          and field not in normalizer_features
+                          and field not in index_features
                           and field not in one_hot_features]
 
         if len(unknown_fields) != 0:
@@ -153,6 +166,7 @@ class EnginePandasNumpy(EngineContext):
         # Start processing
         df = _FeatureProcessor.process_source_feature(df, source_features)
         df = _FeatureProcessor.process_one_hot_feature(df, one_hot_features, inference, self.one_hot_prefix)
+        df = _FeatureProcessor.process_index_feature(df, index_features, inference)
 
         # Only return base features in the tensor_definition. No need to return the embedded features.
         # Remember that expander features can contain multiple columns.
@@ -244,6 +258,20 @@ class _FeatureProcessor:
     code concise.
     """
     @staticmethod
+    def _val_nans(df: pd.DataFrame, feature: FeatureIndex):
+        if df[feature.base_feature.name].hasnans:
+            raise EnginePandaNumpyException(f'Nans exist for categorical field {feature.base_feature.name}')
+
+    @staticmethod
+    def _val_int_in_range(feature: FeatureIndex, d_type: np.dtype):
+        v_min, v_max = np.iinfo(d_type).min, np.iinfo(d_type).max
+        d_s = len(feature.dictionary)
+        if d_s >= v_max:
+            raise EnginePandaNumpyException(f'Dictionary of {feature.name} of size {d_s} too big for type {d_type}. '
+                                            f'This will cause overflow. '
+                                            f'Please choose a data type that can hold bigger numbers')
+
+    @staticmethod
     def process_source_feature(df: pd.DataFrame, features: List[FeatureSource]) -> pd.DataFrame:
         # Apply defaults for source data fields of type 'CATEGORICAL'
         for feature in features:
@@ -253,6 +281,32 @@ class _FeatureProcessor:
                         df[feature.name].cat.add_categories(feature.default, inplace=True)
                 df[feature.name].fillna(feature.default, inplace=True)
         return df
+
+    @staticmethod
+    def process_normalize_feature(df: pd.DataFrame, features: List[FeatureNormalize], inference: bool) -> pd.DataFrame:
+        # First Create a dictionary with mappings of fields to expressions. Run all at once at the end.
+        for feature in features:
+            fn = feature.name
+            bfn = feature.base_feature.name
+            kwargs = {}
+            if isinstance(feature, FeatureNormalizeScale):
+                if not inference:
+                    feature.minimum = df[bfn].min()
+                    feature.maximum = df[bfn].max()
+                logger.info(f'Create {fn} Normalize/Scale {bfn}. Min. {feature.minimum:.2f} Max. {feature.maximum:.2f}')
+                kwargs[fn] = (df[bfn] - feature.minimum) / (feature.maximum - feature.minimum)
+            elif isinstance(feature, FeatureNormalizeStandard):
+                if not inference:
+                    feature.mean = df[bfn].mean()
+                    feature.stddev = df[bfn].std()
+                logger.info(f'Create {fn} Normalize/Standard {bfn}. Mean {feature.mean:.2f} Std {feature.stddev:.2f}')
+                kwargs[fn] = (df[bfn] - feature.mean) / feature.stddev
+            else:
+                raise EnginePandaNumpyException(
+                    f'Unknown feature normaliser type {feature.__class__.name}')
+            # Update the Panda
+            df = df.assign(**kwargs)
+            return df
 
     @staticmethod
     def process_one_hot_feature(df: pd.DataFrame, features: List[FeatureOneHot], inference: bool,
@@ -291,4 +345,21 @@ class _FeatureProcessor:
 
     @staticmethod
     def process_index_feature(df: pd.DataFrame, features, inference: bool) -> pd.DataFrame:
+        # Set dictionary if not in inference mode. Assume we want to build an index.
+        if not inference:
+            for feature in features:
+                feature.dictionary = {cat: i + 1 for i, cat in enumerate(df[feature.base_feature.name].unique())}
+        # Map the dictionary to the panda
+        for feature in features:
+            t = np.dtype(EnginePandasNumpy.panda_type(feature))
+            # Check for int overflow. There could be too many values for the int type.
+            if isinstance(feature.type, FeatureTypeInteger):
+                _FeatureProcessor._val_int_in_range(feature, t)
+            # For Panda categories we can not just fill the nans, they might not be in the categories and cause errors
+            if df[feature.base_feature.name].dtype.name == 'category':
+                _FeatureProcessor._val_nans(df, feature)
+                df[feature.name] = df[feature.base_feature.name].map(feature.dictionary).astype(t)
+            else:
+                df[feature.name] = df[feature.base_feature.name].map(feature.dictionary).fillna(0).astype(t)
+
         return df
