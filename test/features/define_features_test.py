@@ -168,7 +168,7 @@ class TestNormalizeStandardFeature(unittest.TestCase):
         self.assertIsNone(scf.stddev, f'Scale stddev should be None')
 
     def test_creation_non_float(self):
-        name = 'scale'
+        name = 'standard'
         f_type_str = ft.FEATURE_TYPE_STRING
         f_type_flt = ft.FEATURE_TYPE_FLOAT
         sf_flt = ft.FeatureSource('Source', f_type_flt)

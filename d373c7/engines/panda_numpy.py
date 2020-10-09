@@ -102,6 +102,40 @@ class EnginePandasNumpy(EngineContext):
                         f'to false or load saved features so the inference attributes are set'
                     )
 
+    @staticmethod
+    def _val_features_defined_as_columns(df: pd.DataFrame, features: List[Feature]):
+        """Validation function that checks if the needed columns are available in the Panda. Only root features which
+        are not derived from other features need to be in the Panda. The rest of the features can obviously be
+        derived from the root features.
+
+        :param df: The base Panda data to be checked.
+        :param features: List of feature to check.
+        :return: None
+        """
+        root_features = (f for f in features if len(f.embedded_features) == 0)
+        unknown_features = [f for f in root_features if f.name not in df.columns]
+        if len(unknown_features) != 0:
+            raise EnginePandaNumpyException(
+                f'All root features of a tensor definition (i.e. non-derived features) must be in the input df. Did '
+                f'not find {[f.name for f in unknown_features]}'
+            )
+
+    @staticmethod
+    def _val_check_known_logic(all_features: List[Feature], known_features: List[List[Feature]]):
+        """Validation function to see if we know how to build all the features.
+
+        :param all_features: All feature that need to be built.
+        :param known_features: List of List of feature that were identified as having logic.
+        :return: None
+        """
+        known_logic = [f for s in known_features for f in s]
+        unknown_logic = [f for f in all_features if f not in known_logic]
+        if len(unknown_logic) != 0:
+            raise EnginePandaNumpyException(
+                f'Do not know how to build field type. Can not build features: '
+                f'{[field.name for field in unknown_logic]}'
+            )
+
     @property
     def num_threads(self):
         return self._num_threads
@@ -145,28 +179,27 @@ class EnginePandasNumpy(EngineContext):
         logger.info(f'Building Panda for : {tensor_def.name} from DataFrame')
         all_features = tensor_def.embedded_features
         self._val_ready_for_inference(all_features, inference)
+        self._val_features_defined_as_columns(df, all_features)
+
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
         normalizer_features = [field for field in all_features if isinstance(field, FeatureNormalize)]
         index_features = [field for field in all_features if isinstance(field, FeatureIndex)]
         one_hot_features = [field for field in all_features if isinstance(field, FeatureOneHot)]
 
-        # Make sure we can make all fields
-        unknown_fields = [field for field in all_features
-                          if field not in source_features
-                          and field not in normalizer_features
-                          and field not in index_features
-                          and field not in one_hot_features]
-
-        if len(unknown_fields) != 0:
-            raise EnginePandaNumpyException(
-                f'Do not know how to build field type. Can not build features: '
-                f'{[field.name for field in unknown_fields]}'
-            )
+        self._val_check_known_logic(
+            all_features,
+            [
+                source_features,
+                normalizer_features,
+                index_features,
+                one_hot_features
+            ])
 
         # Start processing
         df = _FeatureProcessor.process_source_feature(df, source_features)
         df = _FeatureProcessor.process_one_hot_feature(df, one_hot_features, inference, self.one_hot_prefix)
         df = _FeatureProcessor.process_index_feature(df, index_features, inference)
+        df = _FeatureProcessor.process_normalize_feature(df, normalizer_features, inference)
 
         # Only return base features in the tensor_definition. No need to return the embedded features.
         # Remember that expander features can contain multiple columns.
@@ -306,7 +339,8 @@ class _FeatureProcessor:
                     f'Unknown feature normaliser type {feature.__class__.name}')
             # Update the Panda
             df = df.assign(**kwargs)
-            return df
+        # Return the Panda
+        return df
 
     @staticmethod
     def process_one_hot_feature(df: pd.DataFrame, features: List[FeatureOneHot], inference: bool,

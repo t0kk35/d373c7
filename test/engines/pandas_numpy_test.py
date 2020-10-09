@@ -94,6 +94,16 @@ class TestOneHot(unittest.TestCase):
             vn = [vf.name for vf in fo.expand()]
             self.assertListEqual(vn, mcc_c, f'Names of the Virtual Features must match columns')
 
+    def test_root_missing(self):
+        fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
+        fd = ft.FeatureSource('Card', ft.FEATURE_TYPE_CATEGORICAL)
+        fo = ft.FeatureOneHot('MCC_OH', fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(ft.TensorDefinition('All', [fd]), file)
+            with self.assertRaises(en.EnginePandaNumpyException):
+                e.from_df(ft.TensorDefinition('Derived', [fo]), df, False)
+
     def test_read_base_inference_removed_element(self):
         fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
         fo = ft.FeatureOneHot('MCC_OH', fc)
@@ -120,7 +130,7 @@ class TestOneHot(unittest.TestCase):
             df_c = e.from_csv(ft.TensorDefinition('All', [fc]), file)
             # Remove row and set variables. Also remove from categories!
             df_r = df_c.iloc[1:].copy()
-            df_r['MCC']  = df_c['MCC'].cat.remove_categories(df_c['MCC'][0])
+            df_r['MCC'] = df_c['MCC'].cat.remove_categories(df_c['MCC'][0])
             mcc_v = df_r['MCC'].unique()
             mcc_c = ['MCC' + '__' + m for m in mcc_v]
             # Run non-inference on removed panda
@@ -153,12 +163,56 @@ class TestNormalizeScale(unittest.TestCase):
             self.assertEqual(fs.maximum, mx, f'Maximum not set correctly {fs.maximum}')
             self.assertEqual(fs.minimum, mn, f'Minimum not set correctly {fs.maximum}')
 
+    def test_read_base_inference(self):
+        fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        s_name = 'AmountScale'
+        s_type = ft.FEATURE_TYPE_FLOAT_32
+        fs = ft.FeatureNormalizeScale(s_name, s_type, fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(ft.TensorDefinition('All', [fc]), file)
+            df_1 = e.from_df(ft.TensorDefinition('Derived', [fs]), df, False)
+            # Now remove a line and run in inference mode
+            df = df.iloc[:-1]
+            df_1 = df_1.iloc[:-1]
+            df_2 = e.from_df(ft.TensorDefinition('Derived', [fs]), df, True)
+            self.assertEqual(df_1[s_name].equals(df_2[s_name]), True, f'Inference problem. Series not the same')
+
 
 class TestNormalizeStandard(unittest.TestCase):
     """"Derived Features. Normalize Standard feature tests. We'll use the from_df function for this
     """
     def test_read_base_non_inference(self):
-        pass
+        fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        s_name = 'AmountScale'
+        s_type = ft.FEATURE_TYPE_FLOAT_32
+        fs = ft.FeatureNormalizeStandard(s_name, s_type, fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(ft.TensorDefinition('All', [fc]), file)
+            mn = df['Amount'].mean()
+            st = df['Amount'].std()
+            df = e.from_df(ft.TensorDefinition('Derived', [fs]), df, False)
+            self.assertEqual(len(df.columns), 1, f'Only one columns should have been returned')
+            self.assertEqual(df.columns[0], s_name, f'Column name is not correct {df.columns[0]}')
+            self.assertEqual(fs.inference_ready, True, f'Feature should now be inference ready')
+            self.assertEqual(fs.mean, mn, f'Mean not set correctly {fs.mean}')
+            self.assertEqual(fs.stddev, st, f'Standard Dev not set correctly {fs.stddev}')
+
+    def test_read_base_inference(self):
+        fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        s_name = 'AmountScale'
+        s_type = ft.FEATURE_TYPE_FLOAT_32
+        fs = ft.FeatureNormalizeStandard(s_name, s_type, fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(ft.TensorDefinition('All', [fc]), file)
+            df_1 = e.from_df(ft.TensorDefinition('Derived', [fs]), df, False)
+            # Now remove a line and run in inference mode
+            df = df.iloc[:-1]
+            df_1 = df_1.iloc[:-1]
+            df_2 = e.from_df(ft.TensorDefinition('Derived', [fs]), df, True)
+            self.assertEqual(df_1[s_name].equals(df_2[s_name]), True, f'Inference problem. Series not the same')
 
 
 class TestReshape(unittest.TestCase):

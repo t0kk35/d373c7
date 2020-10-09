@@ -27,6 +27,22 @@ class NumpyList:
             raise NumpyListException(f'All Numpy arrays in a Numpy list must have the same number of rows')
 
     @staticmethod
+    def _val_index_in_range(numpy_list: 'NumpyList', index: int):
+        if index > numpy_list.number_of_lists - 1:
+            raise NumpyListException(
+                f'Trying to access index {index} in a numpy list of length {len(numpy_list)}'
+            )
+
+    @staticmethod
+    def _slice_in_range(numpy_list: 'NumpyList', index: int):
+        if index < 0:
+            raise NumpyListException(f'Slice index can not be smaller than 0. Got {index}')
+        if index > len(numpy_list):
+            raise NumpyListException(
+                f'Slice index can not go beyond length of lists. Got {index}, length {len(numpy_list)}'
+            )
+
+    @staticmethod
     def _val_same_number_of_lists(numpy_list_l: 'NumpyList', numpy_list_r: 'NumpyList'):
         if numpy_list_l.number_of_lists != numpy_list_r.number_of_lists:
             raise NumpyListException(
@@ -53,19 +69,33 @@ class NumpyList:
         NumpyList._val_all_same_0_dim(numpy_list)
         self._numpy_list = numpy_list
 
-    def __getitem__(self, item) -> np.array:
-        return self._numpy_list[item]
+    def __getitem__(self, subscript) -> np.array:
+        if isinstance(subscript, slice):
+            return self._slice(subscript.start, subscript.stop)
+        elif isinstance(subscript, int):
+            if subscript < 0:
+                subscript += len(self)
+            return self._slice(subscript, subscript+1)
+        else:
+            raise NumpyListException(f'Something went wrong. Got wrong subscript type f{subscript}')
 
     def __len__(self) -> int:
         if len(self._numpy_list) > 0:
             return len(self._numpy_list[0])
 
+    def __repr__(self):
+        return f'Numpy List with shapes: {self.shapes}'
+
     @property
-    def numpy_list(self) -> List[np.array]:
+    def lists(self) -> List[np.ndarray]:
         return self._numpy_list
 
     @property
-    def d_type_names(self) -> List[str]:
+    def dtype_names(self) -> List[str]:
+        """Returns the names (i.e. as string) dtypes of the underlying numpy arrays.
+
+        :return: List of string dtype string representations
+        """
         return [array.dtype.name for array in self._numpy_list]
 
     @property
@@ -84,13 +114,14 @@ class NumpyList:
         """
         return len(self._numpy_list)
 
-    def pop(self, index: int) -> np.array:
+    def pop(self, index: int) -> np.ndarray:
         """Pop an numpy array from the list by index. This will return the numpy array at the index and remove it from
         the list.
 
         :param index: The index of the numpy array to be popped
         :return: A numpy array at 'index'. If it exists. Side effect: The numpy will be removed from the list
         """
+        self._val_index_in_range(self, index)
         ret = self._numpy_list[index]
         del self._numpy_list[index]
         return ret
@@ -100,27 +131,47 @@ class NumpyList:
 
         :param index: Index of the numpy list to be removed. If that index exists.
         """
+        self._val_index_in_range(self, index)
         del self._numpy_list[index]
 
-    # Function to shuffle various arrays randomly. This applies the same random order to each numpy.
     def shuffle(self) -> 'NumpyList':
+        """Shuffle the numpy arrays in the list across the 0 dimension. The shuffling is consistent across lists.
+        Meaning that for instance all rows in the various arrays at index x of the input will be moved to index y.
+        This will make sure samples are shuffled consistently
+
+        :return: The shuffled numpy arrays.
+        """
         permutation = np.random.permutation(self._numpy_list[0].shape[0])
         shuffled = [sequence[permutation] for sequence in self._numpy_list]
         return NumpyList(shuffled)
 
-    # Function to sample random records from various arrays. This samples the same random entries from each numpy.
     def sample(self, number_of_rows: int) -> 'NumpyList':
+        """Sample random 'number_of_rows' from each of the arrays in the list. Each array will be sampled consistently
+
+        :param number_of_rows : The number of rows to sample from the arrays
+        :return: The sampled list of numpy arrays
+        """
+        self._slice_in_range(self, number_of_rows)
         permutation = np.random.permutation(number_of_rows)
         sampled = [sequence[permutation] for sequence in self._numpy_list]
         return NumpyList(sampled)
 
-    # Function to slice various arrays in one go
-    def slice(self, from_row_number=None, to_row_number=None) -> 'NumpyList':
+    def _slice(self, from_row_number=None, to_row_number=None) -> 'NumpyList':
+        """Slice all arrays in a numpy list.
+
+        :param from_row_number:
+        :param to_row_number:
+        :return: The sliced numpy list
+        """
         if from_row_number is not None and to_row_number is not None:
+            self._slice_in_range(self, from_row_number)
+            self._slice_in_range(self, to_row_number)
             sliced = [sequence[from_row_number:to_row_number] for sequence in self._numpy_list]
         elif from_row_number is not None:
+            self._slice_in_range(self, from_row_number)
             sliced = [sequence[from_row_number:] for sequence in self._numpy_list]
         elif to_row_number is not None:
+            self._slice_in_range(self, to_row_number)
             sliced = [sequence[:to_row_number] for sequence in self._numpy_list]
         else:
             sliced = [sequence for sequence in self._numpy_list]
@@ -135,11 +186,15 @@ class NumpyList:
         non_fraud = [sequence[non_fraud_index] for sequence in self._numpy_list]
         return NumpyList(fraud), NumpyList(non_fraud)
 
-    # Function to concatenate 2 numpy_lists. It will concatenate each individual numpy in the list
     def concat(self, numpy_list: 'NumpyList') -> 'NumpyList':
+        """Function to concatenate 2 numpy_lists. It will concatenate each individual numpy in the list
+
+        :param numpy_list: The numpy list to concatenate to the current list
+        :return: A numpy list with the input numpy list concatenated to the current numpy list
+        """
         NumpyList._val_same_number_of_lists(self, numpy_list)
         new_list = []
-        for numpy_l, numpy_r in zip(self._numpy_list, numpy_list):
+        for numpy_l, numpy_r in zip(self.lists, numpy_list.lists):
             NumpyList._val_all_same_1_n_dim(numpy_l, numpy_r)
             new_list.append(np.concatenate([numpy_l, numpy_r], axis=0))
         return NumpyList(new_list)
@@ -149,12 +204,20 @@ class NumpyList:
         new_list = [array.astype(numpy_type) for array in self._numpy_list]
         return NumpyList(new_list)
 
-    # Function to split into test, validation an training
-    def split_time(self, val_amount: int, test_amount: int) -> Tuple['NumpyList', 'NumpyList', 'NumpyList']:
+    def split_time(self, val_number: int, test_number: int) -> Tuple['NumpyList', 'NumpyList', 'NumpyList']:
+        """Split a numpy list into training, validation and test. Where the first portion of the data is training, the
+        middle is the validation and the end of the data is the test. This is almost always the best way to split
+        transactional data. First the 'test_number' of records data is taken from the end of the arrays. Of what is
+        left the 'val_number' is taken all that is left is training.
+
+        :param val_number: Number of records to allocate in the validation set
+        :param test_number: Number of records to allocate in the test set.
+        :return: Tuple of 3 numpy lists containing the training, validation and test data respectively
+        """
         # Take x from end of lists as test
-        test = self.slice(from_row_number=len(self)-test_amount, to_row_number=len(self))
+        test = self._slice(from_row_number=len(self)-test_number, to_row_number=len(self))
         # Take another x from what is left at the end and not in test
-        val = self.slice(from_row_number=len(self)-test_amount-val_amount, to_row_number=len(self)-test_amount)
+        val = self._slice(from_row_number=len(self)-test_number-val_number, to_row_number=len(self)-test_number)
         # Take rest
-        train = self.slice(to_row_number=len(self)-test_amount-val_amount)
+        train = self._slice(to_row_number=len(self)-test_number-val_number)
         return train, val, test
