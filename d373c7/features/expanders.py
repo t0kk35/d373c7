@@ -3,6 +3,7 @@ Definition of expander features.
 (c) 2020 d373c7
 """
 from typing import List
+from ..features.common import LEARNING_CATEGORY_BINARY, LearningCategory
 from ..features.common import Feature, FeatureInferenceAttributes, FeatureTypeString, FEATURE_TYPE_INT_8
 from ..features.common import FeatureDefinitionException
 from ..features.common import not_implemented
@@ -92,3 +93,7 @@ class FeatureOneHot(FeatureExpander):
     @property
     def inference_ready(self) -> bool:
         return self._e_names is not None
+
+    @property
+    def learning_category(self) -> LearningCategory:
+        return LEARNING_CATEGORY_BINARY

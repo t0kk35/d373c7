@@ -9,6 +9,13 @@ def not_implemented(class_):
     raise NotImplementedError(f'Feature problem. Not defined for class {class_.__class__.name}')
 
 
+def check_attribute_type(parameter, expected_type: type):
+    if not isinstance(parameter, expected_type):
+        raise AttributeError(
+            f'Feature Attribute Error. Expected <{expected_type}>. Got <{type(parameter)}> '
+        )
+
+
 class FeatureDefinitionException(Exception):
     """ Exception thrown when a the Definition of a feature fails
     Args:
@@ -42,6 +49,7 @@ class FeatureType:
             return ft1
         else:
             return ft2
+
 
 class FeatureTypeString(FeatureType):
     pass
@@ -88,12 +96,25 @@ FEATURE_TYPE_INT_64: FeatureType = FeatureTypeInteger(10, 'INT_64', 64)
 FEATURE_TYPE_BOOL: FeatureType = FeatureTypeBool(11, 'INT_8', 8)
 
 
-class FeatureCategory:
-    """Describes the feature category. For instance if the feature is nominal, binary, ordinal, interval etc...
+class LearningCategory:
+    """Describes the feature category. The category will be used to drive what sort of layers and learning models
+    can used on a specific feature.
     """
     def __init__(self, key: int, name: str):
         self._key = key
         self._name = name
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.name == other.name and self.key == other.key
+        else:
+            return False
+
+    def __hash__(self):
+        return hash(self.key) + hash(self.name)
+
+    def __repr__(self):
+        return f'Learning Category: {self.name}'
 
     @property
     def key(self) -> int:
@@ -104,9 +125,10 @@ class FeatureCategory:
         return self._name
 
 
-FEATURE_CATEGORY_BINARY: FeatureCategory = FeatureCategory(0, 'BINARY')
-FEATURE_CATEGORY_NOMINAL: FeatureCategory = FeatureCategory(1, 'NOMINAL')
-FEATURE_CATEGORY_INTERVAL: FeatureCategory = FeatureCategory(2, 'INTERVAL')
+LEARNING_CATEGORY_BINARY: LearningCategory = LearningCategory(0, 'Binary')
+LEARNING_CATEGORY_CATEGORICAL: LearningCategory = LearningCategory(1, 'Categorical')
+LEARNING_CATEGORY_CONTINUOUS: LearningCategory = LearningCategory(2, 'Continuous')
+LEARNING_CATEGORY_NONE: LearningCategory = LearningCategory(3, 'None')
 
 
 class Feature:
@@ -121,6 +143,8 @@ class Feature:
         f_type: The type of the feature. Must be a FeatureType class instance
     """
     def __init__(self, name: str, f_type: FeatureType):
+        check_attribute_type(name, str)
+        check_attribute_type(f_type, FeatureType)
         self.__name = name
         self.__type = f_type
 
@@ -134,6 +158,10 @@ class Feature:
 
     @property
     def embedded_features(self) -> List['Feature']:
+        return not_implemented(self)
+
+    @property
+    def learning_category(self) -> LearningCategory:
         return not_implemented(self)
 
 

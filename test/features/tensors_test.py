@@ -32,6 +32,8 @@ class TestTensorCreate(unittest.TestCase):
         self.assertEqual(len(t), len([f1, f2]), f'Tensor definition lenght not working. Got {len(t)}')
 
 
+# Include rank test
+
 def main():
     unittest.main()
 

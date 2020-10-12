@@ -176,7 +176,7 @@ class EnginePandasNumpy(EngineContext):
         :param inference: Indicate if we are inferring or not. If True [COMPLETE]
         :return: A Panda with the fields as defined in the tensor_def.
         """
-        logger.info(f'Building Panda for : {tensor_def.name} from DataFrame')
+        logger.info(f'Building Panda for : <{tensor_def.name}> from DataFrame. Inference mode <{inference}>')
         all_features = tensor_def.embedded_features
         self._val_ready_for_inference(all_features, inference)
         self._val_features_defined_as_columns(df, all_features)
@@ -213,6 +213,10 @@ class EnginePandasNumpy(EngineContext):
             else:
                 col_names.append(feature.name)
         df = df[[name for name in col_names]]
+
+        # Don't forget to set the Tensor definition rank if in inference mode
+        if inference:
+            tensor_def.rank = len(df.shape)
         logger.info(f'Done creating {tensor_def.name}. Shape={df.shape}')
         return df
 
