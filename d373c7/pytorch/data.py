@@ -5,6 +5,7 @@ Imports for Pytorch data
 import torch
 from torch.utils.data import Dataset
 from ..features.common import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL
+from ..features.common import LEARNING_CATEGORY_LABEL
 from ..features.tensor import TensorDefinition
 from ..engines import NumpyList
 from .common import PyTorchTrainException
@@ -16,7 +17,8 @@ class _DTypeHelper:
     DEFAULT_TYPES_PER_LEARNING_CATEGORY = {
         LEARNING_CATEGORY_CONTINUOUS: torch.float32,
         LEARNING_CATEGORY_BINARY: torch.float32,
-        LEARNING_CATEGORY_CATEGORICAL: torch.long
+        LEARNING_CATEGORY_CATEGORICAL: torch.long,
+        LEARNING_CATEGORY_LABEL: torch.float32
     }
 
     @staticmethod
@@ -26,7 +28,7 @@ class _DTypeHelper:
             d_type = _DTypeHelper.DEFAULT_TYPES_PER_LEARNING_CATEGORY.get(lc, None)
             if d_type is None:
                 PyTorchTrainException(
-                    f''
+                    f'Could not determine default Torch tensor data type for learning category <{lc}>'
                 )
             else:
                 dtypes.append(d_type)

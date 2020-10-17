@@ -129,6 +129,7 @@ LEARNING_CATEGORY_BINARY: LearningCategory = LearningCategory(0, 'Binary')
 LEARNING_CATEGORY_CATEGORICAL: LearningCategory = LearningCategory(1, 'Categorical')
 LEARNING_CATEGORY_CONTINUOUS: LearningCategory = LearningCategory(2, 'Continuous')
 LEARNING_CATEGORY_NONE: LearningCategory = LearningCategory(3, 'None')
+LEARNING_CATEGORY_LABEL: LearningCategory = LearningCategory(4, 'Label')
 
 
 class Feature:

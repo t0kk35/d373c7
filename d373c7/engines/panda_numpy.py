@@ -11,8 +11,10 @@ import numpy as np
 from functools import partial
 from typing import Dict, List
 from .common import EngineContext
+from .numpy_helper import NumpyList
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL, FeatureInferenceAttributes
 from ..features.common import FeatureTypeInteger
+from ..features.common import LEARNING_CATEGORY_NONE
 from ..features.base import FeatureSource, FeatureIndex
 from ..features.tensor import TensorDefinition
 from ..features.expanders import FeatureExpander, FeatureOneHot
@@ -86,21 +88,24 @@ class EnginePandasNumpy(EngineContext):
             raise EnginePandaNumpyException(f'All date formats should be the same. Got {format_codes}')
 
     @staticmethod
-    def _val_ready_for_inference(features: List[Feature], inference: bool):
+    def _val_ready_for_inference(tensor_def: TensorDefinition, inference: bool):
         """Validation function to check if all feature are ready for inference. Some features have specific inference
         attributes that need to be set before an inference file can be made.
 
-        :param features: A list of features to check for 'ready inference attributes'
-        :param inference: Indication if we are inference mode or not
+        :param tensor_def: The tensor that needs to be ready for inference.
+        :param inference: Indication if we are inference mode or not.
         :return: None
         """
         if inference:
-            for f in [f for f in features if isinstance(f, FeatureInferenceAttributes)]:
-                if not f.inference_ready:
-                    raise EnginePandaNumpyException(
-                        f'Feature {f.name} not ready for inference. Make sure to first do a run with inference set '
-                        f'to false or load saved features so the inference attributes are set'
-                    )
+            if not tensor_def.inference_ready:
+                nr = []
+                for f in tensor_def.embedded_features:
+                    if isinstance(f, FeatureInferenceAttributes):
+                        if not f.inference_ready:
+                            nr.append(f)
+                raise EnginePandaNumpyException(
+                    f'Tensor <{tensor_def.name}> not ready for inference. Following features not ready {nr}'
+                )
 
     @staticmethod
     def _val_features_defined_as_columns(df: pd.DataFrame, features: List[Feature]):
@@ -177,8 +182,8 @@ class EnginePandasNumpy(EngineContext):
         :return: A Panda with the fields as defined in the tensor_def.
         """
         logger.info(f'Building Panda for : <{tensor_def.name}> from DataFrame. Inference mode <{inference}>')
+        self._val_ready_for_inference(tensor_def, inference)
         all_features = tensor_def.embedded_features
-        self._val_ready_for_inference(all_features, inference)
         self._val_features_defined_as_columns(df, all_features)
 
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
@@ -215,7 +220,7 @@ class EnginePandasNumpy(EngineContext):
         df = df[[name for name in col_names]]
 
         # Don't forget to set the Tensor definition rank if in inference mode
-        if inference:
+        if not inference:
             tensor_def.rank = len(df.shape)
         logger.info(f'Done creating {tensor_def.name}. Shape={df.shape}')
         return df
@@ -288,6 +293,25 @@ class EnginePandasNumpy(EngineContext):
                 col_names.append(feature.name)
         df = df[[name for name in col_names]]
         return df
+
+    def to_numpy_list(self, tensor_def: TensorDefinition, df: pd.DataFrame) -> NumpyList:
+        self._val_features_defined_as_columns(df, tensor_def.features)
+
+        n = []
+        for lc in tensor_def.learning_categories:
+            td = TensorDefinition(lc.name, tensor_def.filter_features(lc))
+            hf = td.highest_precision_feature
+            d_type = self.panda_type(hf)
+            logger.info(f'Converting DataFrame to Numpy of type: {d_type}')
+            tdf = self.reshape(td, df)
+            npy = tdf.to_numpy(dtype=d_type)
+            # Squeeze off last dim if is size is 1
+            if len(npy.shape) > 0 and npy.shape[-1] == 1:
+                npy = np.squeeze(npy, axis=len(npy.shape)-1)
+            n.append(npy)
+
+        npl = NumpyList(n)
+        return npl
 
 
 class _FeatureProcessor:

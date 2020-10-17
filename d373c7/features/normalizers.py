@@ -6,6 +6,7 @@ from typing import List
 from ..features.base import FeatureDefinitionException
 from ..features.common import Feature, FeatureInferenceAttributes, FeatureType, FeatureTypeFloat
 from ..features.common import not_implemented
+from ..features.common import LearningCategory, LEARNING_CATEGORY_CONTINUOUS
 
 
 class FeatureNormalize(FeatureInferenceAttributes):
@@ -41,6 +42,10 @@ class FeatureNormalize(FeatureInferenceAttributes):
     @property
     def base_feature(self) -> Feature:
         return not_implemented(self)
+
+    @property
+    def learning_category(self) -> LearningCategory:
+        return LEARNING_CATEGORY_CONTINUOUS
 
 
 class FeatureNormalizeScale(FeatureNormalize):

@@ -4,6 +4,7 @@ Definition of a set of Numpy Helper classes.
 """
 import logging
 import numpy as np
+from ..features import TensorDefinition
 from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
@@ -221,3 +222,35 @@ class NumpyList:
         # Take rest
         train = self._slice(to_row_number=len(self)-test_number-val_number)
         return train, val, test
+
+    def is_built_from(self, tensor_definition: TensorDefinition) -> bool:
+        """Method to validate that a Numpy list was likely built from a specific tensor definition. The data types can
+        not be checked. The checks mainly revolve around the sizes of the lists.
+
+        :param:tensor_definition. The tensor definition to be checked.
+        :return: True of False. True if this Numpy List and TensorDefinition are compatible
+        """
+        if not tensor_definition.inference_ready:
+            logger.info(f'Tensor Definition and Numpy list not compatible. Tensor Definition is not inference ready')
+            return False
+
+        lc = tensor_definition.learning_categories
+
+        if len(lc) != self.number_of_lists:
+            logger.info(f'Tensor Definition and Numpy list not compatible. Expected {len(lc)} lists in the Numpy list')
+            return False
+
+        for lc, npl in zip(lc, self.lists):
+            f = tensor_definition.filter_features(lc)
+            if tensor_definition.rank == 2:
+                if len(f) != npl.shape[1]:
+                    logger.info(
+                        f'Tensor Definition and Numpy not compatible. Learning Type {lc} does not have same # elements'
+                    )
+                return False
+            else:
+                logger.info(f'Tensor Definition and Numpy not compatible. Rank in definition {tensor_definition.rank}')
+                return False
+
+        # All good if we manage to get here.
+        return True

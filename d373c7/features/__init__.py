@@ -12,4 +12,4 @@ from .common import FeatureDefinitionException
 from .base import FeatureSource, FeatureVirtual, FeatureIndex
 from .expanders import FeatureOneHot
 from .normalizers import FeatureNormalizeScale, FeatureNormalizeStandard
-from .tensor import TensorDefinition
+from .tensor import TensorDefinition, TensorDefinitionException

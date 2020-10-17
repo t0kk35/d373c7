@@ -176,7 +176,7 @@ class FeatureIndex(FeatureInferenceAttributes):
         return [self._base_feature]
 
     @property
-    def category(self) -> LearningCategory:
+    def learning_category(self) -> LearningCategory:
         return LEARNING_CATEGORY_CATEGORICAL
 
     @property

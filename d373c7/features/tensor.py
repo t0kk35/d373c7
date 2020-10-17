@@ -2,10 +2,20 @@
 Tensor Definition classes. For grouping features.
 (c) 2020 d373c7
 """
-from .common import LearningCategory, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL
+from .common import LearningCategory, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_LABEL
 from .common import LEARNING_CATEGORY_CONTINUOUS
-from .base import Feature
+from .common import FeatureTypeNumerical
+from .base import Feature, FeatureInferenceAttributes
 from typing import List
+
+LEARNING_CATEGORIES = [
+    LEARNING_CATEGORY_BINARY,
+    LEARNING_CATEGORY_CONTINUOUS,
+    LEARNING_CATEGORY_CATEGORICAL,
+    LEARNING_CATEGORY_LABEL
+]
+
+# TODO Add validation routing. We should not be creating an index and one hot feature on the same base features
 
 
 class TensorDefinitionException(Exception):
@@ -21,11 +31,36 @@ class TensorDefinition:
     """ A TensorDefinition is a container of features. A set of features can be bundled in a tensor definition. That
     tensor definition can then be constructed by the engines and used in modelling.
     """
-    @staticmethod
-    def _val_rank_set(tensor_def: 'TensorDefinition'):
-        if tensor_def.rank is None:
+    def _val_rank_set(self):
+        if self._rank is None:
             raise TensorDefinitionException(
-                f'The Rank of Tensor Definition <{tensor_def.name}> has not been set. Can not retrieve it'
+                f'The Rank of Tensor Definition <{self.name}> has not been set. Can not retrieve it'
+            )
+
+    def _val_labels_defined(self, labels: List[Feature]):
+        for lb in labels:
+            if lb not in self.features:
+                raise TensorDefinitionException(
+                    f'Label <{lb.name}> does not exist in tensor definition <{self.name}>'
+                )
+
+    def _val_duplicate_entries(self):
+        if len(list(set(self.features))) != len(self.features):
+            raise TensorDefinitionException(
+                f'Tensor definition has duplicate entries <{[f for f in self.features if self.features.count(f) > 1]}>'
+            )
+
+    def _val_not_empty(self):
+        if len(self.features) == 0:
+            raise TensorDefinitionException(
+                f'Tensor definition <{self.name} has no features. It is empty. Can not perform action'
+            )
+
+    def _val_has_numerical_features(self):
+        f = [f for f in self.features if isinstance(f.type, FeatureTypeNumerical)]
+        if len(f) == 0:
+            raise TensorDefinitionException(
+                f'Tensor definition <{self.name} has no numerical features. It is empty. Can not perform action'
             )
 
     def __init__(self, name: str, features: List[Feature] = None):
@@ -35,6 +70,8 @@ class TensorDefinition:
             self._feature_list = []
         else:
             self._features_list = features
+        self._val_duplicate_entries()
+        self._labels = []
 
     def __len__(self):
         return len(self.features)
@@ -56,7 +93,7 @@ class TensorDefinition:
 
         :return: Rank of the Tensor as int
         """
-        self._val_rank_set(self)
+        self._val_rank_set()
         return self._rank
 
     @rank.setter
@@ -87,6 +124,56 @@ class TensorDefinition:
         embedded_features_flat = [feature for features in embedded_features for feature in features]
         return list(set(embedded_features_flat + base_features))
 
+    @property
+    def inference_ready(self) -> bool:
+        """Method that return True if the Tensor is ready for inference. It means it knows it's own rank and all
+        embedded features have their inference attributes set.
+
+        :return: Bool. True or False Indicating if the tensor is ready or not for inference.
+        """
+        if self._rank is None:
+            return False
+        else:
+            for f in self.embedded_features:
+                if isinstance(f, FeatureInferenceAttributes):
+                    if not f.inference_ready:
+                        return False
+        return True
+
+    @property
+    def learning_categories(self) -> List[LearningCategory]:
+        res = [lc for lc in LEARNING_CATEGORIES if len(self.filter_features(lc)) > 0]
+        if len(self._labels) > 0:
+            res.append(LEARNING_CATEGORY_LABEL)
+        return res
+
+    def set_label(self, label: Feature):
+        """Define which feature in this Tensor Definition will be used as label for training
+
+        :param: The feature that should be use a training target.
+        """
+        self._val_labels_defined([label])
+        self._labels.append(label)
+
+    @property
+    def highest_precision_feature(self) -> Feature:
+        """Return the highest precision (numerical) feature in this Tensor Definition.
+        :return: The feature with the highest precision
+        """
+        self._val_has_numerical_features()
+        t = [f for f in self.features if isinstance(f.type, FeatureTypeNumerical)]
+        t.sort(key=lambda x: x.type.precision)
+        # Last has biggest precision
+        return t[-1]
+
+    def set_labels(self, labels: List[Feature]):
+        """Define which of the features in the Tensor Definition will be used as label for training.
+
+        :param labels: List of feature that need to treated a labels during training.
+        """
+        self._val_labels_defined(labels)
+        self._labels.extend(labels)
+
     def remove(self, feature: Feature) -> None:
         self._features_list.remove(feature)
 
@@ -115,11 +202,13 @@ class TensorDefinition:
     def continuous_features(self) -> List[Feature]:
         """Return the continuous feature in this Tensor Definition
 
-        :return:
+        :return: List of continuous features in this Tensor Definition
         """
         return self.filter_features(LEARNING_CATEGORY_CONTINUOUS)
 
-    @property
-    def learning_categories(self) -> List[LearningCategory]:
-        lcs = [LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL]
-        return [lc for lc in lcs if len(self.filter_features(lc)) > 0]
+    def label_features(self) -> List[Feature]:
+        """Return the label feature in this Tensor Definition
+
+        :return: List of label features in this Tensor Definition
+        """
+        return self._labels
