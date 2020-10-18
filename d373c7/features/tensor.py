@@ -5,7 +5,8 @@ Tensor Definition classes. For grouping features.
 from .common import LearningCategory, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_LABEL
 from .common import LEARNING_CATEGORY_CONTINUOUS
 from .common import FeatureTypeNumerical
-from .base import Feature, FeatureInferenceAttributes
+from .base import Feature, FeatureIndex, FeatureInferenceAttributes
+from .expanders import FeatureOneHot
 from typing import List
 
 LEARNING_CATEGORIES = [
@@ -14,8 +15,6 @@ LEARNING_CATEGORIES = [
     LEARNING_CATEGORY_CATEGORICAL,
     LEARNING_CATEGORY_LABEL
 ]
-
-# TODO Add validation routing. We should not be creating an index and one hot feature on the same base features
 
 
 class TensorDefinitionException(Exception):
@@ -63,6 +62,15 @@ class TensorDefinition:
                 f'Tensor definition <{self.name} has no numerical features. It is empty. Can not perform action'
             )
 
+    def _val_base_feature_overlap(self):
+        fi = set([f.base_feature for f in self.features if isinstance(f, FeatureIndex)])
+        fo = set([f.base_feature for f in self.features if isinstance(f, FeatureOneHot)])
+        s = fi.intersection(fo)
+        if len(s) != 0:
+            raise TensorDefinitionException(
+                f'FeatureIndex and FeatureOneHot should not have the same base features. Overlap <{s}>'
+            )
+
     def __init__(self, name: str, features: List[Feature] = None):
         self._name = name
         self._rank = None
@@ -71,6 +79,7 @@ class TensorDefinition:
         else:
             self._features_list = features
         self._val_duplicate_entries()
+        self._val_base_feature_overlap()
         self._labels = []
 
     def __len__(self):
@@ -143,8 +152,6 @@ class TensorDefinition:
     @property
     def learning_categories(self) -> List[LearningCategory]:
         res = [lc for lc in LEARNING_CATEGORIES if len(self.filter_features(lc)) > 0]
-        if len(self._labels) > 0:
-            res.append(LEARNING_CATEGORY_LABEL)
         return res
 
     def set_label(self, label: Feature):
@@ -183,7 +190,10 @@ class TensorDefinition:
         :param category: The LearningCategory to filter out.
         :return: List of features of the specified 'LearningCategory'
         """
-        return [f for f in self.features if f.learning_category == category]
+        if category == LEARNING_CATEGORY_LABEL:
+            return self._labels
+        else:
+            return [f for f in self.features if f.learning_category == category and f not in self._labels]
 
     def categorical_features(self) -> List[Feature]:
         """Return the categorical features in this Tensor Definition.
@@ -211,4 +221,4 @@ class TensorDefinition:
 
         :return: List of label features in this Tensor Definition
         """
-        return self._labels
+        return self.filter_features(LEARNING_CATEGORY_LABEL)

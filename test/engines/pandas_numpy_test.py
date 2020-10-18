@@ -271,26 +271,56 @@ class TestReshape(unittest.TestCase):
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
             df = df.drop(columns=[rf.name])
-            with self.assertRaises(ft.TensorDefinitionException):
+            with self.assertRaises(en.EnginePandaNumpyException):
                 _ = e.reshape(td2, df)
 
 
 class TestToNumpy(unittest.TestCase):
-    """Test for conversion to_numpy
+    """Test for conversion to_numpy_list
     """
     def test_create(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
-        fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
-        td1 = ft.TensorDefinition('Source', [fa, fc])
+        fm = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
+        fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_CATEGORICAL, default='NA')
+        ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fa, fm, fc, ff])
         fo = ft.FeatureOneHot('MCC_OH', fc)
-        fi = ft.FeatureIndex('MCC_ID', ft.FEATURE_TYPE_INT_16, fc)
-        td2 = ft.TensorDefinition('Derived', [fa, fc, fo, fi])
+        fi = ft.FeatureIndex('MCC_ID', ft.FEATURE_TYPE_INT_16, fm)
+        td2 = ft.TensorDefinition('Derived', [fa, fo, fi, ff])
+        td2.set_label(ff)
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
             df = e.from_df(td2, df, inference=False)
-            x = e.to_numpy_list(td2, df)
-            print(x)
+            npl = e.to_numpy_list(td2, df)
+            self.assertEqual(len(npl), len(df), f'length of numpy list incorrect Got {len(npl)}. Expected {len(df)}')
+            self.assertEqual(len(npl.lists), len(td2.learning_categories), f'Wrong number of lists {len(npl.lists)}')
+            for lc, l in zip(td2.learning_categories, npl.lists):
+                self.assertEqual(l.shape[0], len(df), f'In correct shape 0 for List {lc}')
+            for lc, l in zip(td2.learning_categories, npl.lists):
+                if lc == ft.LEARNING_CATEGORY_CONTINUOUS:
+                    self.assertEqual(len(l.shape), 1, 'Continuous List dim 1 incorrect. Should have been 1')
+                elif lc == ft.FEATURE_TYPE_CATEGORICAL:
+                    self.assertEqual(len(l.shape), 1, 'Categorical List dim 1 incorrect. Should have been 1')
+                elif lc == ft.LEARNING_CATEGORY_BINARY:
+                    self.assertEqual(l.shape[1], len(fo.expand_names), f'Binary List dim 1 incorrect. {l.shape[1]}')
+                elif lc == ft.LEARNING_CATEGORY_LABEL:
+                    self.assertEqual(len(l.shape), 1, 'Label List dim 1 incorrect. Should have been 1')
+            for lc, l in zip(td2.learning_categories, npl.lists):
+                if lc == ft.LEARNING_CATEGORY_CONTINUOUS:
+                    self.assertEqual(l.min(initial=1000), df[fa.name].min(), f'Min do not match {l.min(initial=1000)}')
+                    self.assertEqual(l.max(initial=0), df[fa.name].max(), f'Max do not match {l.max(initial=0)}')
+                    # TODO check numpy std <> panda's std?
+                    # self.assertEqual(l.std(), df[fa.name].std(), f'Std do not match {l.std()}')
+                elif lc == ft.FEATURE_TYPE_CATEGORICAL:
+                    self.assertEqual(l.min(initial=100), min(fi.dictionary.values()), f'Min wrong {l.min(initial=100)}')
+                    self.assertEqual(l.max(initial=0), max(fi.dictionary.values()), f'Max wrong {l.max(initial=0)}')
+                elif lc == ft.LEARNING_CATEGORY_BINARY:
+                    self.assertEqual(l.min(initial=10), 0, f'Min wrong {l.min(initial=10)}')
+                    self.assertEqual(l.max(initial=0), 1, f'Min wrong {l.min(initial=0)}')
+                if lc == ft.LEARNING_CATEGORY_LABEL:
+                    self.assertEqual(l.min(initial=1000), df[ff.name].min(), f'Min do not match {l.min(initial=1000)}')
+                    self.assertEqual(l.max(initial=0), df[ff.name].max(), f'Max do not match {l.max(initial=0)}')
 
 
 def main():

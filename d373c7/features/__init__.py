@@ -7,7 +7,7 @@ from .common import FEATURE_TYPE_INT_16, FEATURE_TYPE_CATEGORICAL, FEATURE_TYPE_
 from .common import FEATURE_TYPE_FLOAT_64, FEATURE_TYPE_INT_32, FEATURE_TYPE_INT_64, FEATURE_TYPE_INTEGER
 from .common import FEATURE_TYPE_STRING
 from .common import LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_CONTINUOUS
-from .common import LEARNING_CATEGORY_NONE
+from .common import LEARNING_CATEGORY_NONE, LEARNING_CATEGORY_LABEL
 from .common import FeatureDefinitionException
 from .base import FeatureSource, FeatureVirtual, FeatureIndex
 from .expanders import FeatureOneHot

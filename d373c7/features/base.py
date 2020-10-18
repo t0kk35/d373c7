@@ -5,8 +5,8 @@ Definition of some fairly straight forward Features
 import logging
 from typing import List
 from ..features.common import Feature, FeatureType, FeatureDefinitionException, FeatureInferenceAttributes
-from ..features.common import LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_NONE
-from ..features.common import FeatureTypeString, FeatureTypeInteger, LearningCategory
+from ..features.common import LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_NONE, LEARNING_CATEGORY_CONTINUOUS
+from ..features.common import FeatureTypeString, FeatureTypeInteger, FeatureTypeFloat, LearningCategory
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,8 @@ class FeatureSource(Feature):
     def learning_category(self) -> LearningCategory:
         if isinstance(self.type, FeatureTypeInteger):
             return LEARNING_CATEGORY_CATEGORICAL
+        elif isinstance(self.type, FeatureTypeFloat):
+            return LEARNING_CATEGORY_CONTINUOUS
         else:
             return LEARNING_CATEGORY_NONE
 

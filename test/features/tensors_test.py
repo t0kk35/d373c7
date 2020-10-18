@@ -25,6 +25,15 @@ class TestTensorCreate(unittest.TestCase):
         with self.assertRaises(ft.TensorDefinitionException):
             _ = ft.TensorDefinition(name_t, [f1, f1])
 
+    def test_overlap_base_feature(self):
+        # Should fail because the base feature is shared
+        name_t = 'test-tensor'
+        f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
+        f2 = ft.FeatureIndex('test-feature-2', ft.FEATURE_TYPE_INT_8, f1)
+        f3 = ft.FeatureOneHot('test-feature-3', f1)
+        with self.assertRaises(ft.TensorDefinitionException):
+            _ = ft.TensorDefinition(name_t, [f1, f2, f3])
+
     def test_remove(self):
         name_t = 'test-tensor'
         f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
@@ -58,17 +67,19 @@ class TestTensorCreate(unittest.TestCase):
         name_t = 'test-tensor'
         f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
         f2 = ft.FeatureIndex('test-feature-2', ft.FEATURE_TYPE_INT_8, f1)
-        f3 = ft.FeatureOneHot('test-feature-3', f1)
-        f4 = ft.FeatureSource('test-feature-4', ft.FEATURE_TYPE_FLOAT)
-        f5 = ft.FeatureNormalizeScale('test-feature-5', ft.FEATURE_TYPE_FLOAT, f4)
-        f6 = ft.FeatureNormalizeStandard('test-feature-6', ft.FEATURE_TYPE_FLOAT, f4)
-        f7 = ft.FeatureSource('test-feature-7', ft.FEATURE_TYPE_FLOAT)
-        t = ft.TensorDefinition(name_t, [f1, f2, f3, f4, f5, f6, f7])
-        t.set_label(f7)
+        f3 = ft.FeatureSource('test-feature-3', ft.FEATURE_TYPE_STRING)
+        f4 = ft.FeatureOneHot('test-feature-4', f3)
+        f5 = ft.FeatureSource('test-feature-5', ft.FEATURE_TYPE_FLOAT)
+        f6 = ft.FeatureNormalizeScale('test-feature-6', ft.FEATURE_TYPE_FLOAT, f5)
+        f7 = ft.FeatureNormalizeStandard('test-feature-7', ft.FEATURE_TYPE_FLOAT, f5)
+        f8 = ft.FeatureSource('test-feature-8', ft.FEATURE_TYPE_FLOAT)
+        t = ft.TensorDefinition(name_t, [f1, f2, f3, f4, f5, f6, f7, f8])
+        t.set_label(f8)
+        self.assertEqual(len(t.learning_categories), 4, f'Should be 4 categories. Got {len(t.learning_categories)}')
         self.assertListEqual(t.categorical_features(), [f2])
-        self.assertListEqual(t.binary_features(), [f3])
-        self.assertListEqual(t.continuous_features(), [f5, f6])
-        self.assertListEqual(t.label_features(), [f7])
+        self.assertListEqual(t.binary_features(), [f4])
+        self.assertListEqual(t.continuous_features(), [f6, f7])
+        self.assertListEqual(t.label_features(), [f8])
 
     def test_highest_precision(self):
         name_t = 'test-tensor'
