@@ -5,9 +5,41 @@ Imports for Pytorch data
 from .common import PyTorchTrainException
 from ..features.tensor import TensorDefinition
 import torch
+import torch.nn as nn
+# noinspection PyProtectedMember
+from torch.nn.modules.loss import _Loss as TorchLoss
+from typing import Type
 
 
-class _Loss:
+class _LossBase:
+    """Loss function object fed to the training """
+    def __init__(self, loss_fn: Type[TorchLoss], reduction: str):
+        self._training_loss = loss_fn(reduction=reduction)
+
+    def __call__(self, *args, **kwargs) -> torch.Tensor:
+        raise NotImplemented('Call not implemented for loss function')
+
+    def score(self, *args, **kwargs) -> torch.Tensor:
+        raise NotImplemented('Call not implemented for loss function')
+
+    @property
+    def train_loss(self) -> TorchLoss:
+        return self._training_loss
+
+
+class SingleLabelBCELoss(_LossBase):
+    def __init__(self, reduction='mean'):
+        _LossBase.__init__(self, nn.BCELoss, reduction)
+        self._train_loss = torch.nn.BCELoss(reduction=reduction)
+
+    def __call__(self, *args, **kwargs):
+        pr = torch.squeeze(args[0])
+        lb = torch.squeeze(args[1][0])
+        loss = self.train_loss(pr, lb)
+        return loss
+
+
+class _LossBaseScore(_LossBase):
     """Base Loss function object off of which all loss functions will be created.
     """
     @staticmethod
@@ -19,7 +51,8 @@ class _Loss:
                 f'and {len(tensor_def.binary_features())} binary features.'
             )
 
-    def __init__(self, tensor_def: TensorDefinition, reduction='mean'):
+    def __init__(self, tensor_def: TensorDefinition, loss_fn: Type[TorchLoss], reduction='mean'):
+        _LossBase.__init__(self, loss_fn, reduction)
         self._val_categorical_or_binary_features(tensor_def)
         self._train_loss = None
         self._score_loss = None

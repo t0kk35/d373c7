@@ -19,8 +19,7 @@ class NumpyList:
     """Helper Class for a group of numpy arrays. It allows running operations like slicing, sampling, shuffling...
     consistently across a list of numpy arrays.
 
-    Args:
-        numpy_list: A List of numpy arrays. They must all be of the same length.
+    :argument numpy_list: A List of numpy arrays. They must all be of the same length.
     """
     @staticmethod
     def _val_all_same_0_dim(numpy_list: List[np.array]):
@@ -64,6 +63,13 @@ class NumpyList:
         if len(array.shape) != 1:
             raise NumpyListException(
                 f'The array containing the label for split should only have 1 dimension. it has {len(array.shape)}'
+            )
+
+    @staticmethod
+    def _val_is_integer_type(numpy_list: 'NumpyList', index: int):
+        if not np.issubdtype(numpy_list.lists[index].dtype, np.integer):
+            raise NumpyListException(
+                f'List at index <{index}> is not of integer type. That is unexpected'
             )
 
     def __init__(self, numpy_list: List[np.array]):
@@ -134,6 +140,17 @@ class NumpyList:
         """
         self._val_index_in_range(self, index)
         del self._numpy_list[index]
+
+    def unique(self, index: int) -> (List[int], List[int]):
+        """Return the unique entries and counts of a specific numpy list
+
+        :param index: Index of the list for which to run the unique operation.
+        :return: A Tuple, the first element is the unique entries, the second entry is the counts.
+        """
+        NumpyList._val_index_in_range(self, index)
+        NumpyList._val_is_integer_type(self, index)
+        val, cnt = np.unique(self.lists[index], return_counts=True)
+        return list(val), list(cnt)
 
     def shuffle(self) -> 'NumpyList':
         """Shuffle the numpy arrays in the list across the 0 dimension. The shuffling is consistent across lists.

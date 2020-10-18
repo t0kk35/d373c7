@@ -19,6 +19,7 @@ LEARNING_CATEGORIES = [
 
 class TensorDefinitionException(Exception):
     """ Exception thrown when a the Definition of a feature fails
+
     Args:
         message: A free form text message describing the error
     """
@@ -165,6 +166,7 @@ class TensorDefinition:
     @property
     def highest_precision_feature(self) -> Feature:
         """Return the highest precision (numerical) feature in this Tensor Definition.
+
         :return: The feature with the highest precision
         """
         self._val_has_numerical_features()

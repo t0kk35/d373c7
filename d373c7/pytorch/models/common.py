@@ -5,13 +5,14 @@ Common classes for all Pytorch Models
 
 import torch
 import torch.nn as nn
-from ..loss import _Loss
+from ..loss import _LossBase
 from typing import List, Any
 
 
 class _Model(nn.Module):
-    def __init__(self):
+    def __init__(self, loss: _LossBase):
         nn.Module.__init__(self)
+        self._loss_fn = loss
 
     def _forward_unimplemented(self, *inp: Any) -> None:
         raise NotImplemented('Abstract method _forward_unimplemented not implemented')
@@ -25,8 +26,9 @@ class _Model(nn.Module):
     def get_optimizer(self) -> torch.optim.optimizer.Optimizer:
         pass
 
-    def get_loss(self) -> _Loss:
-        pass
+    @property
+    def loss_fn(self) -> _LossBase:
+        return self._loss_fn
 
     @property
     def default_metrics(self) -> List[str]:

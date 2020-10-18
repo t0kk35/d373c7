@@ -72,10 +72,9 @@ class FeatureVirtual(Feature):
     - Either providing a base feature to virtualize
     - Or providing a name and f_type
 
-    Args:
-        feature: A feature to virtualize
-        name: The name for the virtual feature.
-        f_type: The type of the virtual feature.
+    :argument feature: A feature to virtualize
+    :argument name: The name for the virtual feature.
+    :argument f_type: The type of the virtual feature.
     """
     @staticmethod
     def _val_feature_or_name(feature: Feature, name: str, f_type: FeatureType):
@@ -116,10 +115,10 @@ class FeatureVirtual(Feature):
 class FeatureIndex(FeatureInferenceAttributes):
     """Indexer feature. It will turn a specific input field (the base_feature) into an index. For instance 'DE'->1,
     'FR'->2, 'GB'->3 etc... The index will have an integer type and is ideal to model in embeddings.
-    Args:
-        name: A name for the index feature
-        f_type: The type of the feature. This must be an instance of the FeatureTypeInteger class (i.e integer based)
-        base_feature: The feature which will be indexed. This should be either string or integer based.
+
+    :argument name: A name for the index feature
+    :argument f_type: The type of the feature. This must be an instance of the FeatureTypeInteger class (i.e integer based)
+    :argument base_feature: The feature which will be indexed. This should be either string or integer based.
     """
     @staticmethod
     def _val_type_is_string_or_integer(base_feature: Feature):

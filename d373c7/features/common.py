@@ -135,13 +135,8 @@ LEARNING_CATEGORY_LABEL: LearningCategory = LearningCategory(4, 'Label')
 class Feature:
     """Base Feature class. All features will inherit from this class.
 
-    Args:
-        name: A name for the feature
-        f_type: The type of the feature. Must be a FeatureType class instance
-
-    Attributes:
-        name: The name for the feature
-        f_type: The type of the feature. Must be a FeatureType class instance
+    :argument name: A name for the feature
+    :argument f_type: The type of the feature. Must be a FeatureType class instance
     """
     def __init__(self, name: str, f_type: FeatureType):
         check_attribute_type(name, str)

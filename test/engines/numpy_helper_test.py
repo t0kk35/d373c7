@@ -98,6 +98,19 @@ class TestCreation(unittest.TestCase):
         with self.assertRaises(en.NumpyListException):
             n.remove(1)
 
+    def test_unique(self):
+        x = np.random.rand(5, 2)
+        y = np.random.randint(32, size=(5, 2))
+        c = [x, y]
+        n = en.NumpyList(c)
+        vl_1, cn_1 = np.unique(y, return_counts=True)
+        vl_1, cn_1 = list(vl_1), list(cn_1)
+        vl_2, cn_2 = n.unique(1)
+        self.assertListEqual(vl_1, vl_2, f'Unique values not correct. Got {vl_2}. Expected {vl_1}')
+        self.assertListEqual(cn_1, cn_2, f'Unique counts not correct. Got {cn_2}. Expected {cn_1}')
+        with self.assertRaises(en.NumpyListException):
+            _, _ = n.unique(0)
+
     def test_shuffle(self):
         x = np.arange(5)
         y = np.arange(5)

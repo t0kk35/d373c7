@@ -3,13 +3,12 @@ Imports for Pytorch data
 (c) 2020 d373c7
 """
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, Sampler
 from ..features.common import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL
 from ..features.common import LEARNING_CATEGORY_LABEL
 from ..features.tensor import TensorDefinition
 from ..engines import NumpyList
 from .common import PyTorchTrainException
-
 from typing import List
 
 
@@ -39,6 +38,7 @@ class NumpyListDataSet(Dataset):
     def __init__(self, tensor_def: TensorDefinition, npl: NumpyList):
         self._npl = npl
         self._dtypes = _DTypeHelper.get_dtypes(tensor_def)
+        # Yes assign to CPU. We could directly allocate to the GPU, but then we can only use one worker :|
         self.device = torch.device('cpu')
 
     def __len__(self):
@@ -48,3 +48,50 @@ class NumpyListDataSet(Dataset):
         res = [torch.as_tensor(array[item], dtype=dt, device=self.device)
                for array, dt in zip(self._npl.lists, self._dtypes)]
         return res
+
+    def data_loader(self, device: torch.device, batch_size: int, num_workers: int = 1,
+                    shuffle: bool = False, sampler: Sampler = None) -> DataLoader:
+        # Cuda does not support multiple workers. Override if GPU
+        if num_workers > 1:
+            self.device = torch.device('cpu')
+            dl = DataLoader(
+                self, num_workers=num_workers, batch_size=batch_size, shuffle=shuffle, pin_memory=True, sampler=sampler
+            )
+        else:
+            # Only CPU Tensors can be pinned
+            pin = False if device.type == 'cuda' else True
+            self.device = device
+            dl = DataLoader(self, batch_size=batch_size, shuffle=shuffle, pin_memory=pin, sampler=sampler)
+        return dl
+
+
+class ClassSampler:
+    """ Class for creating a sampler.
+
+    :argument npl: The Numpy List to sample.
+    :argument tensor_definition: The Tensor definition used to create the numpy List
+    """
+    @staticmethod
+    def _val_built_from(npl: NumpyList, tensor_definition: TensorDefinition):
+        if not npl.is_built_from(tensor_definition):
+            raise PyTorchTrainException(
+                f'The NumpyList does not seem to be built from the given TensorDefinition'
+            )
+
+    def __init__(self, npl: NumpyList, tensor_definition: TensorDefinition):
+        ClassSampler._val_built_from(npl, tensor_definition)
+        self._npl = npl
+        self._tensor_def = tensor_definition
+
+    def over_sampler(self) -> Sampler:
+        # Assume the last list contains the labels, if no label index is given
+        if label_index is None:
+            label_index = -1
+        _, class_balance = np.unique(self._npl[label_index], return_counts=True)
+        weights = 1./torch.tensor(class_balance, dtype=torch.float)
+        sample_weights = weights[self._npl[label_index].astype(int)]
+        train_sampler = torch.utils.data.sampler.WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights)
+        )
+        return train_sampler
