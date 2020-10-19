@@ -85,11 +85,10 @@ class ClassSampler:
 
     def over_sampler(self) -> Sampler:
         # Assume the last list contains the labels, if no label index is given
-        if label_index is None:
-            label_index = -1
-        _, class_balance = np.unique(self._npl[label_index], return_counts=True)
+        label_index = self._tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        _, class_balance = self._npl.unique(label_index)
         weights = 1./torch.tensor(class_balance, dtype=torch.float)
-        sample_weights = weights[self._npl[label_index].astype(int)]
+        sample_weights = weights[self._npl.lists[label_index].astype(int)]
         train_sampler = torch.utils.data.sampler.WeightedRandomSampler(
             weights=sample_weights,
             num_samples=len(sample_weights)

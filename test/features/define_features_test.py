@@ -17,6 +17,7 @@ class TestFeatureSource(unittest.TestCase):
         self.assertIsNone(f.default, 'Should not have a default')
         self.assertIsNone(f.format_code, 'Should not have format code')
         self.assertEqual(len(f.embedded_features), 0, 'Should not have embedded features')
+        self.assertEqual(f.learning_category, ft.LEARNING_CATEGORY_NONE, f'String should have learning type NONE')
 
     def test_creation_w_format_code(self):
         name = 'test'
@@ -120,7 +121,8 @@ class TestFeatureOneHot(unittest.TestCase):
         self.assertEqual(oh.inference_ready, False, 'Should be not inference ready upon creation')
         self.assertIsNone(oh.expand_names, f'Expand Names should be None {oh.expand_names}')
         self.assertEqual(len(oh.expand()), 0, f'Expand should yields empty list')
-        self.assertEqual(oh.type, ft.FEATURE_TYPE_INT_8, 'Must always be int-! type. Smallest possible')
+        self.assertEqual(oh.type, ft.FEATURE_TYPE_INT_8, 'Must always be int-8 type. Smallest possible')
+        self.assertEqual(oh.learning_category, ft.LEARNING_CATEGORY_BINARY, f'Must have learning category Binary')
 
     def test_creation_non_string(self):
         name = 'OneHot'
@@ -141,6 +143,7 @@ class TestNormalizeScaleFeature(unittest.TestCase):
         self.assertEqual(scf.inference_ready, False, f'Scale feature should NOT be inference ready')
         self.assertIsNone(scf.minimum, f'Scale minimum should be None')
         self.assertIsNone(scf.maximum, f'Scale maximum should be None')
+        self.assertEqual(scf.learning_category, ft.LEARNING_CATEGORY_CONTINUOUS, f'Wrong Learning category')
 
     def test_creation_non_float(self):
         name = 'scale'
@@ -166,6 +169,7 @@ class TestNormalizeStandardFeature(unittest.TestCase):
         self.assertEqual(scf.inference_ready, False, f'Scale feature should NOT be inference ready')
         self.assertIsNone(scf.mean, f'Scale mean should be None')
         self.assertIsNone(scf.stddev, f'Scale stddev should be None')
+        self.assertEqual(scf.learning_category, ft.LEARNING_CATEGORY_CONTINUOUS, f'Wrong Learning category')
 
     def test_creation_non_float(self):
         name = 'standard'
@@ -178,6 +182,8 @@ class TestNormalizeStandardFeature(unittest.TestCase):
         with self.assertRaises(ft.FeatureDefinitionException):
             ft.FeatureNormalizeStandard(name, f_type_flt, sf_str)
 
+
+# TODO FeatureIndex Tests
 
 def main():
     unittest.main()

@@ -6,7 +6,7 @@ from .common import LearningCategory, LEARNING_CATEGORY_BINARY, LEARNING_CATEGOR
 from .common import LEARNING_CATEGORY_CONTINUOUS
 from .common import FeatureTypeNumerical
 from .base import Feature, FeatureIndex, FeatureInferenceAttributes
-from .expanders import FeatureOneHot
+from .expanders import FeatureOneHot, FeatureExpander
 from typing import List
 
 LEARNING_CATEGORIES = [
@@ -70,6 +70,12 @@ class TensorDefinition:
         if len(s) != 0:
             raise TensorDefinitionException(
                 f'FeatureIndex and FeatureOneHot should not have the same base features. Overlap <{s}>'
+            )
+
+    def _val_inference_ready(self, operation: str):
+        if not self.inference_ready:
+            raise TensorDefinitionException(
+                f'Tensor is not ready for inference. Can not perform operation <{operation}>'
             )
 
     def __init__(self, name: str, features: List[Feature] = None):
@@ -155,6 +161,16 @@ class TensorDefinition:
         res = [lc for lc in LEARNING_CATEGORIES if len(self.filter_features(lc)) > 0]
         return res
 
+    @staticmethod
+    def _expand_features(features: List[Feature]) -> List[Feature]:
+        r = []
+        for f in features:
+            if isinstance(f, FeatureExpander):
+                r.extend(f.expand())
+            else:
+                r.append(f)
+        return r
+
     def set_label(self, label: Feature):
         """Define which feature in this Tensor Definition will be used as label for training
 
@@ -178,7 +194,7 @@ class TensorDefinition:
     def set_labels(self, labels: List[Feature]):
         """Define which of the features in the Tensor Definition will be used as label for training.
 
-        :param labels: List of feature that need to treated a labels during training.
+        :param labels: List of feature that need to treated as labels during training.
         """
         self._val_labels_defined(labels)
         self._labels.extend(labels)
@@ -186,41 +202,62 @@ class TensorDefinition:
     def remove(self, feature: Feature) -> None:
         self._features_list.remove(feature)
 
-    def filter_features(self, category: LearningCategory) -> List[Feature]:
+    def filter_features(self, category: LearningCategory, expand=False) -> List[Feature]:
         """Filter features in this Tensor Definition according to a Learning category.
+        NOTE that with expand 'True', the Tensor Definition must be ready for inference.
 
         :param category: The LearningCategory to filter out.
+        :param expand: Bool value. True or False indicating if the names of expander features will be expanded. For in
+            instance with expand = True a 'FeatureOneHot' country will be expanded to country__DE, country__FR etc...
+            Default is False. NOTE that with expand 'True', the Tensor Definition must be ready for inference.
         :return: List of features of the specified 'LearningCategory'
         """
+        if expand:
+            self._val_inference_ready('filter ' + category.name)
         if category == LEARNING_CATEGORY_LABEL:
             return self._labels
         else:
-            return [f for f in self.features if f.learning_category == category and f not in self._labels]
+            r = [f for f in self.features if f.learning_category == category and f not in self._labels]
+            if expand:
+                r = TensorDefinition._expand_features(r)
+            return r
 
-    def categorical_features(self) -> List[Feature]:
+    def categorical_features(self, expand=False) -> List[Feature]:
         """Return the categorical features in this Tensor Definition.
 
+        :param expand: Bool value. True or False indicating if the names of expander features will be expanded. For in
+            instance with expand = True a 'FeatureOneHot' country will be expanded to country__DE, country__FR etc...
+            Default is False
         :return: List of categorical features in this Tensor Definition
         """
-        return self.filter_features(LEARNING_CATEGORY_CATEGORICAL)
+        return self.filter_features(LEARNING_CATEGORY_CATEGORICAL, expand)
 
-    def binary_features(self) -> List[Feature]:
+    def binary_features(self, expand=False) -> List[Feature]:
         """Return the binary features in this Tensor Definition
 
+        :param expand: Bool value. True or False indicating if the names of expander features will be expanded. For in
+            instance with expand = True a 'FeatureOneHot' country will be expanded to country__DE, country__FR etc...
+            Default is False
         :return: List of binary features in this Tensor Definition
         """
-        return self.filter_features(LEARNING_CATEGORY_BINARY)
+        return self.filter_features(LEARNING_CATEGORY_BINARY, expand)
 
-    def continuous_features(self) -> List[Feature]:
+    def continuous_features(self, expand=False) -> List[Feature]:
         """Return the continuous feature in this Tensor Definition
 
+        :param expand: Bool value. True or False indicating if the names of expander features will be expanded. For in
+            instance with expand = True a 'FeatureOneHot' country will be expanded to country__DE, country__FR etc...
+            Default is False
         :return: List of continuous features in this Tensor Definition
         """
-        return self.filter_features(LEARNING_CATEGORY_CONTINUOUS)
+        return self.filter_features(LEARNING_CATEGORY_CONTINUOUS, expand)
 
-    def label_features(self) -> List[Feature]:
+    def label_features(self, expand=False) -> List[Feature]:
         """Return the label feature in this Tensor Definition
 
+        :param expand: Bool value. True or False indicating if the names of expander features will be expanded. For in
+            instance with expand = True a 'FeatureOneHot' country will be expanded to country__DE, country__FR etc...
+            Default is False
         :return: List of label features in this Tensor Definition
         """
-        return self.filter_features(LEARNING_CATEGORY_LABEL)
+        return self.filter_features(LEARNING_CATEGORY_LABEL, expand)

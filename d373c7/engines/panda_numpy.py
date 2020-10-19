@@ -70,8 +70,7 @@ class EnginePandasNumpy(EngineContext):
                 names = [name for name in df.columns
                          if name.startswith(feature.base_feature.name + self.one_hot_prefix)]
             else:
-                names = [name for name in df.columns
-                         if name == feature.name]
+                names = [name for name in df.columns if name == feature.name]
             if len(names) == 0:
                 raise EnginePandaNumpyException(
                     f'During reshape, all features of tensor definition must be in the panda. Missing {feature.name}'

@@ -6,14 +6,14 @@ import torch
 import torch.utils.data as data
 import torch.optim as opt
 from tqdm import tqdm
-from .common import _ModelManager, _History
+from .common import _History
 from .history import TrainHistory
 from .loss import _LossBase
 from .optimizer import _Optimizer
 # noinspection PyProtectedMember
-from .models.common import _Model
+from .models.common import _Model, _ModelManager
 # inspection PyProtectedMember
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 
 
 class Trainer(_ModelManager):
@@ -103,9 +103,8 @@ class Trainer(_ModelManager):
         return self._train_history, self._val_history
 
     def train_one_cycle(self, epochs: int, max_lr: float, wd: float = None, pct_start: float = 0.3,
-                        div_factor: float = 25, final_div_factor: float = 1e4,
-                        optimizer: _Optimizer = None) -> Tuple[_History, _History]:
-        o = self._get_or_default_optimizer(optimizer, max_lr, wd)
+                        div_factor: float = 25, final_div_factor: float = 1e4) -> Tuple[_History, _History]:
+        o = self.model.get_optimizer(max_lr, wd)
         # noinspection PyUnresolvedReferences
         scheduler = opt.lr_scheduler.lr_scheduler.OneCycleLR(
             o.optimizer,
@@ -121,5 +120,54 @@ class Trainer(_ModelManager):
 
 
 class Tester(_ModelManager):
+    """Class to test a Neural net. Embeds some methods that hide the Pytorch training logic/loop.
+
+    :argument model: The model to be trained. This needs to be a d373c7 model. Not a regular nn.Module.
+    :argument device: A torch device (CPU or GPU) to use during training.
+    :argument test_dl: A torch DataLoader object containing the test data
+    """
     def __init__(self, model: _Model, device: torch.device, test_dl: data.DataLoader):
         _ModelManager.__init__(self, model, device)
+        self._test_dl = test_dl
+
+    @staticmethod
+    def _test_step(model: _Model, device: torch.device, test_dl: data.DataLoader) -> List[torch.Tensor]:
+        model.eval()
+        out = []
+        with torch.no_grad():
+            with tqdm(total=len(test_dl), desc=f'Testing in {len(test_dl)} steps') as bar:
+                for i, ds in enumerate(test_dl):
+                    # All data-sets to the GPU if available
+                    ds = [d.to(device, non_blocking=True) for d in ds]
+                    x = Tester._get_x(model, ds)
+                    out.append((model(*x)))
+                    bar.update(1)
+                    del ds
+        return out
+
+    def test(self) -> List[torch.Tensor]:
+        self._model.to(self._device)
+        return Tester._test_step(self._model, self._device, self._test_dl)
+
+    @staticmethod
+    def _score_step(model: _Model, device: torch.device, test_dl: data.DataLoader,
+                    loss_fn: _LossBase) -> List[torch.Tensor]:
+        model.eval()
+        score = []
+        # Start loop
+        with torch.no_grad():
+            with tqdm(total=len(test_dl), desc=f'Creating Scores in {len(test_dl)} steps') as bar:
+                for i, ds in enumerate(test_dl):
+                    # All data-sets to the GPU
+                    ds = [d.to(device, non_blocking=True) for d in ds]
+                    x = Tester._get_x(model, ds)
+                    y = Trainer._get_y(model, ds)
+                    s = loss_fn.score(model(*x), y)
+                    score.append(s)
+                    bar.update(1)
+                    del ds
+        return score
+
+    def score(self, loss_fn: _LossBase) -> List[torch.Tensor]:
+        self._model.to(self._device)
+        return Tester._score_step(self._model, self._device, self._test_dl, loss_fn)

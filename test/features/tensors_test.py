@@ -78,8 +78,15 @@ class TestTensorCreate(unittest.TestCase):
         self.assertEqual(len(t.learning_categories), 4, f'Should be 4 categories. Got {len(t.learning_categories)}')
         self.assertListEqual(t.categorical_features(), [f2])
         self.assertListEqual(t.binary_features(), [f4])
-        self.assertListEqual(t.continuous_features(), [f6, f7])
+        self.assertListEqual(t.continuous_features(), [f5, f6, f7])
         self.assertListEqual(t.label_features(), [f8])
+        # Should fail because the Tensor Definition is ready for inference.
+        with self.assertRaises(ft.TensorDefinitionException):
+            t.categorical_features(True)
+            t.binary_features(True)
+            t.continuous_features(True)
+            t.label_features(True)
+            t.filter_features(ft.LEARNING_CATEGORY_CATEGORICAL, True)
 
     def test_highest_precision(self):
         name_t = 'test-tensor'

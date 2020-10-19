@@ -85,7 +85,8 @@ class TestOneHot(unittest.TestCase):
             df = e.from_csv(td, file, inference=False)
             mcc_v = df['MCC'].unique()
             mcc_c = ['MCC' + '__' + m for m in mcc_v]
-            df = e.from_df(ft.TensorDefinition('Derived', [fo]), df, inference=False)
+            td2 = ft.TensorDefinition('Derived', [fo])
+            df = e.from_df(td2, df, inference=False)
             self.assertEqual(len(df.columns), len(mcc_v), f'Col number must match values {len(df.columns), len(mcc_v)}')
             self.assertListEqual(list(df.columns), mcc_c, f'Names of columns must match values {df.columns}')
             self.assertEqual(fo.inference_ready, True, f'One Hot feature should be ready for inference')
@@ -97,6 +98,7 @@ class TestOneHot(unittest.TestCase):
             self.assertListEqual(vn, mcc_c, f'Names of the Virtual Features must match columns')
             self.assertEqual(td.inference_ready, True, f'Tensor should have been ready for inference now')
             self.assertEqual(td.rank, 2, f'This should have been a rank 2 tensor. Got {td.rank}')
+            self.assertListEqual(td2.binary_features(True), fo.expand(), f'Expanded Feature not correct')
 
     def test_root_missing(self):
         fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
@@ -162,12 +164,14 @@ class TestNormalizeScale(unittest.TestCase):
             df = e.from_csv(ft.TensorDefinition('All', [fc]), file, inference=False)
             mn = df['Amount'].min()
             mx = df['Amount'].max()
-            df = e.from_df(ft.TensorDefinition('Derived', [fs]), df, inference=False)
+            td2 = ft.TensorDefinition('Derived', [fs])
+            df = e.from_df(td2, df, inference=False)
             self.assertEqual(len(df.columns), 1, f'Only one columns should have been returned')
             self.assertEqual(df.columns[0], s_name, f'Column name is not correct {df.columns[0]}')
             self.assertEqual(fs.inference_ready, True, f'Feature should now be inference ready')
             self.assertEqual(fs.maximum, mx, f'Maximum not set correctly {fs.maximum}')
             self.assertEqual(fs.minimum, mn, f'Minimum not set correctly {fs.maximum}')
+            self.assertListEqual(td2.continuous_features(True), [fs], f'Expanded Feature not correct')
 
     def test_read_base_inference(self):
         fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
@@ -199,12 +203,14 @@ class TestNormalizeStandard(unittest.TestCase):
             df = e.from_csv(ft.TensorDefinition('All', [fc]), file, inference=False)
             mn = df['Amount'].mean()
             st = df['Amount'].std()
-            df = e.from_df(ft.TensorDefinition('Derived', [fs]), df, inference=False)
+            td2 = ft.TensorDefinition('Derived', [fs])
+            df = e.from_df(td2, df, inference=False)
             self.assertEqual(len(df.columns), 1, f'Only one columns should have been returned')
             self.assertEqual(df.columns[0], s_name, f'Column name is not correct {df.columns[0]}')
             self.assertEqual(fs.inference_ready, True, f'Feature should now be inference ready')
             self.assertEqual(fs.mean, mn, f'Mean not set correctly {fs.mean}')
             self.assertEqual(fs.stddev, st, f'Standard Dev not set correctly {fs.stddev}')
+            self.assertListEqual(td2.continuous_features(True), [fs], f'Expanded Feature not correct')
 
     def test_read_base_inference(self):
         fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
@@ -235,7 +241,8 @@ class TestIndex(unittest.TestCase):
             td = ft.TensorDefinition('All', [fc])
             df = e.from_csv(td, file, inference=False)
             mcc_v = df['MCC'].unique()
-            df = e.from_df(ft.TensorDefinition('Derived', [fi]), df, inference=False)
+            td2 = ft.TensorDefinition('Derived', [fi])
+            df = e.from_df(td2, df, inference=False)
             self.assertEqual(len(df.columns), 1, f'Should have gotten one column. Got {len(df.columns)}')
             self.assertEqual(df.columns[0], ind_name, f'Column name incorrect. Got {df.columns[0]}')
             self.assertEqual(fi.inference_ready, True, f'Index feature should be ready for inference')
@@ -243,6 +250,7 @@ class TestIndex(unittest.TestCase):
             self.assertListEqual(list(fi.dictionary.keys()), list(mcc_v), f'Dictionary values don not match')
             self.assertEqual(td.inference_ready, True, f'Tensor should have been ready for inference now')
             self.assertEqual(td.rank, 2, f'This should have been a rank 2 tensor. Got {td.rank}')
+            self.assertListEqual(td2.categorical_features(True), [fi], f'Expanded Feature not correct')
 
     # TODO More tests here
 
@@ -321,6 +329,34 @@ class TestToNumpy(unittest.TestCase):
                 if lc == ft.LEARNING_CATEGORY_LABEL:
                     self.assertEqual(l.min(initial=1000), df[ff.name].min(), f'Min do not match {l.min(initial=1000)}')
                     self.assertEqual(l.max(initial=0), df[ff.name].max(), f'Max do not match {l.max(initial=0)}')
+
+
+class TestIsBuiltFrom(unittest.TestCase):
+    def test_create(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        fm = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
+        fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_CATEGORICAL, default='NA')
+        ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fa, fm, fc, ff])
+        fo = ft.FeatureOneHot('MCC_OH', fc)
+        fi = ft.FeatureIndex('MCC_ID', ft.FEATURE_TYPE_INT_16, fm)
+        td2 = ft.TensorDefinition('Derived', [fa, fo, fi, ff])
+        td2.set_label(ff)
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            df = e.from_df(td2, df, inference=False)
+            npl = e.to_numpy_list(td2, df)
+            self.assertEqual(npl.is_built_from(td2), True, f'Should have yielded true')
+            self.assertEqual(npl.is_built_from(td1), False, f'Should have yielded False')
+            # Strip off element from the binary List
+            lists = npl.lists
+            lists[0] = lists[0][:, 0:3]
+            npl2 = en.NumpyList(lists)
+            self.assertEqual(npl2.is_built_from(td2), False, f'Should have yielded False')
+            # Remove entire list
+            npl.pop(0)
+            self.assertEqual(npl.is_built_from(td2), False, f'Should have yielded False')
 
 
 def main():

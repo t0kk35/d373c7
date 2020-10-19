@@ -258,13 +258,15 @@ class NumpyList:
             return False
 
         for lc, npl in zip(lc, self.lists):
-            f = tensor_definition.filter_features(lc)
+            f = tensor_definition.filter_features(lc, expand=True)
             if tensor_definition.rank == 2:
-                if len(f) != npl.shape[1]:
+                shape = npl.shape[1] if len(npl.shape) > 1 else 1
+                if len(f) != shape:
                     logger.info(
-                        f'Tensor Definition and Numpy not compatible. Learning Type {lc} does not have same # elements'
+                        f'Tensor Definition and Numpy not compatible. '
+                        f'Learning Type {lc.name} does not have same # elements'
                     )
-                return False
+                    return False
             else:
                 logger.info(f'Tensor Definition and Numpy not compatible. Rank in definition {tensor_definition.rank}')
                 return False

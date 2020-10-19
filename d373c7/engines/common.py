@@ -16,7 +16,7 @@ class EngineContext:
     """
     def __init__(self):
         logging.basicConfig(level=logging.INFO,
-                            format='%(asctime)s.%(msecs)03d %(name)-25s %(levelname)-8s %(message)s',
+                            format='%(asctime)s.%(msecs)03d %(name)-30s %(levelname)-8s %(message)s',
                             datefmt='%Y-%m-%d %H:%M:%S')
         logger = logging.getLogger(__name__)
         logger.info('Start Engine...')
