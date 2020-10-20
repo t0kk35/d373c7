@@ -318,11 +318,6 @@ class _FeatureProcessor:
     code concise.
     """
     @staticmethod
-    def _val_nans(df: pd.DataFrame, feature: FeatureIndex):
-        if df[feature.base_feature.name].hasnans:
-            raise EnginePandaNumpyException(f'Nans exist for categorical field {feature.base_feature.name}')
-
-    @staticmethod
     def _val_int_in_range(feature: FeatureIndex, d_type: np.dtype):
         v_min, v_max = np.iinfo(d_type).min, np.iinfo(d_type).max
         d_s = len(feature.dictionary)
@@ -418,9 +413,6 @@ class _FeatureProcessor:
                 _FeatureProcessor._val_int_in_range(feature, t)
             # For Panda categories we can not just fill the nans, they might not be in the categories and cause errors
             if df[feature.base_feature.name].dtype.name == 'category':
-                _FeatureProcessor._val_nans(df, feature)
-                df[feature.name] = df[feature.base_feature.name].map(feature.dictionary).astype(t)
-            else:
-                df[feature.name] = df[feature.base_feature.name].map(feature.dictionary).fillna(0).astype(t)
-
+                df[feature.base_feature.name].cat.add_categories([0], inplace=True)
+            df[feature.name] = df[feature.base_feature.name].map(feature.dictionary).fillna(0).astype(t)
         return df
