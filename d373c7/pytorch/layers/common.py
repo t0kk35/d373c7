@@ -18,3 +18,8 @@ class _Layer(nn.Module):
 
     def _forward_unimplemented(self, *inp: Any) -> None:
         raise NotImplemented(f'Unimplemented <_forward_unimplemented>  in <{self.__class__.__name__}>')
+
+    @property
+    def output_size(self) -> int:
+        raise NotImplemented(f'Unimplemented <output_size>  in <{self.__class__.__name__}>. Should be implemented by ' +
+                             f'child classes')

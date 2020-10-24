@@ -43,6 +43,10 @@ class _History:
         raise NotImplemented('history property not implemented')
 
     @property
+    def epoch(self):
+        return self._epoch
+
+    @property
     def step(self) -> int:
         return self._step
 

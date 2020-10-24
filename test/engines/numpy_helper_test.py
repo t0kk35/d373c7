@@ -170,6 +170,8 @@ class TestCreation(unittest.TestCase):
         with self.assertRaises(en.NumpyListException):
             _ = n1.concat(n2).lists
 
+    # TODO add tests for split
+
 
 def main():
     unittest.main()

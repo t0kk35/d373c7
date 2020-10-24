@@ -2,18 +2,24 @@
 Imports for Pytorch Training module
 (c) 2020 d373c7
 """
+import logging
+import os
+import numpy as np
 import torch
 import torch.utils.data as data
-import torch.optim as opt
 from tqdm import tqdm
 from .common import _History
 from .history import TrainHistory
 from .loss import _LossBase
 from .optimizer import _Optimizer
+from .schedule import LRHistory, LinearLR
 # noinspection PyProtectedMember
 from .models.common import _Model, _ModelManager
 # inspection PyProtectedMember
 from typing import Tuple, Dict, List
+
+
+logger = logging.getLogger(__name__)
 
 
 class Trainer(_ModelManager):
@@ -50,7 +56,7 @@ class Trainer(_ModelManager):
             optimizer.zero_grad()
             x = Trainer._get_x(model, ds)
             y = Trainer._get_y(model, ds)
-            out = model(*x)
+            out = model(x)
             loss = loss_fn(out, y)
             loss.backward()
             optimizer.step()
@@ -76,7 +82,7 @@ class Trainer(_ModelManager):
                 ds = [d.to(device, non_blocking=True) for d in ds]
                 x = Trainer._get_x(model, ds)
                 y = Trainer._get_y(model, ds)
-                out = model(*x)
+                out = model(x)
                 loss = loss_fn(out, y)
                 history.end_step(out, y, loss)
                 del ds
@@ -102,11 +108,46 @@ class Trainer(_ModelManager):
                 bar.set_postfix(self._merge_histories(self._train_history, self._val_history, epoch))
         return self._train_history, self._val_history
 
+    def find_lr(self, start_lr: float, end_lr: float, wd: float = 0.0, max_steps: int = 100) -> LRHistory:
+        # Save model and optimizer state, so we can restore
+        save_file = './temp_model.pt'
+        logger.info(f'Saving model under {save_file}')
+        if os.path.exists(save_file):
+            os.remove(save_file)
+        self.save(save_file)
+        self._model.to(self._device)
+        # Set-up a step schedule with new optimizer. It will adjust (increase) the LR at each step.
+        o = self.model.optimizer(start_lr, wd)
+        lr_schedule = LinearLR(end_lr, max_steps, o)
+        history = LRHistory(self._train_dl, lr_schedule, 5, 0.1, max_steps)
+        # Run Loop
+        with tqdm(total=min(max_steps, history.steps), desc=f'Finding LR in {max_steps} steps') as bar:
+            self._train_step(bar, self._model, self.device, self._train_dl, self.model.loss_fn(), o,
+                             history, lr_schedule)
+        # Restore model and optimizer
+        logger.info(f'Restoring model from {save_file}')
+        self.load(save_file)
+        os.remove(save_file)
+        return history
+
     def train_one_cycle(self, epochs: int, max_lr: float, wd: float = None, pct_start: float = 0.3,
                         div_factor: float = 25, final_div_factor: float = 1e4) -> Tuple[_History, _History]:
-        o = self.model.get_optimizer(max_lr, wd)
+        """Train a model with the one cycle policy as explained by Leslie Smith; https://arxiv.org/pdf/1803.09820.pdf.
+        One cycle training normally has faster convergence. It basically first increases the learning rate to a
+        maximum specified rate and then gradually decreases it to a minimum.
+
+        :param epochs: Number of epoch to train for.
+        :param max_lr: Maximum learning rate to use.
+        :param wd: The weight decay. Default depends on the model.
+        :param pct_start: The percentage of the cycle during which the learning rate is increased. Default = 0.3
+        :param div_factor: Defines the initial learning rate as max_lr/div_factor. Default = 25
+        :param final_div_factor: Defined the final learning rate as initial_lr/final_div_factor. Default = 0.0001
+        :return: 2 Objects of type LR_History. The contain the training statistics for the training and validation steps
+            respectively.
+        """
+        o = self.model.optimizer(max_lr, wd)
         # noinspection PyUnresolvedReferences
-        scheduler = opt.lr_scheduler.lr_scheduler.OneCycleLR(
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
             o.optimizer,
             max_lr=max_lr,
             steps_per_epoch=self._train_history.steps,
@@ -116,13 +157,13 @@ class Trainer(_ModelManager):
             pct_start=pct_start
         )
         # inspection PyUnresolvedReferences
-        return self._train(epochs, self.model.loss_fn, o, scheduler)
+        return self._train(epochs, self.model.loss_fn(), o, scheduler)
 
 
 class Tester(_ModelManager):
-    """Class to test a Neural net. Embeds some methods that hide the Pytorch training logic/loop.
+    """Class to test a Neural net. Embeds some methods that hide the Pytorch logic.
 
-    :argument model: The model to be trained. This needs to be a d373c7 model. Not a regular nn.Module.
+    :argument model: The model to be tested. This needs to be a d373c7 model. Not a regular nn.Module.
     :argument device: A torch device (CPU or GPU) to use during training.
     :argument test_dl: A torch DataLoader object containing the test data
     """
@@ -140,14 +181,19 @@ class Tester(_ModelManager):
                     # All data-sets to the GPU if available
                     ds = [d.to(device, non_blocking=True) for d in ds]
                     x = Tester._get_x(model, ds)
-                    out.append((model(*x)))
+                    out.append((model(x)))
                     bar.update(1)
                     del ds
         return out
 
-    def test(self) -> List[torch.Tensor]:
+    def test_plot(self) -> Tuple[np.array, np.array]:
+        # Run test and convert to numpy Array for easy of use in plotting routines
         self._model.to(self._device)
-        return Tester._test_step(self._model, self._device, self._test_dl)
+        pr = Tester._test_step(self._model, self._device, self._test_dl)
+        pr = torch.cat(pr, dim=0).cpu().numpy()
+        lb = [Tester._get_y(self._model, ds)[0] for ds in iter(self._test_dl)]
+        lb = torch.squeeze(torch.cat(lb, dim=0)).cpu().numpy()
+        return pr, lb
 
     @staticmethod
     def _score_step(model: _Model, device: torch.device, test_dl: data.DataLoader,

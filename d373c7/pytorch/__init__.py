@@ -4,3 +4,5 @@ Imports for custom Pytorch stuff
 """
 from .common import PyTorchTrainException
 from .data import ClassSampler, NumpyListDataSet
+from .training import Trainer, Tester
+

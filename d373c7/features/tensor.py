@@ -171,13 +171,14 @@ class TensorDefinition:
                 r.append(f)
         return r
 
-    def set_label(self, label: Feature):
+    def set_label(self, label: Feature) -> 'TensorDefinition':
         """Define which feature in this Tensor Definition will be used as label for training
 
         :param: The feature that should be use a training target.
         """
         self._val_labels_defined([label])
         self._labels.append(label)
+        return self
 
     @property
     def highest_precision_feature(self) -> Feature:

@@ -72,6 +72,14 @@ class NumpyList:
                 f'List at index <{index}> is not of integer type. That is unexpected'
             )
 
+    @staticmethod
+    def _val_val_plus_test_smaller_than_length(npl: 'NumpyList', validation: int, test: int):
+        if validation + test >= len(npl):
+            raise NumpyListException(
+                f'The number of validation <{validation}> + the number of test <{test}> records. Is bigger than the ' +
+                f'Length of the Numpy List <{len(npl)}> '
+            )
+
     def __init__(self, numpy_list: List[np.array]):
         NumpyList._val_all_same_0_dim(numpy_list)
         self._numpy_list = numpy_list
@@ -232,6 +240,7 @@ class NumpyList:
         :param test_number: Number of records to allocate in the test set.
         :return: Tuple of 3 numpy lists containing the training, validation and test data respectively
         """
+        NumpyList._val_val_plus_test_smaller_than_length(self, val_number, test_number)
         # Take x from end of lists as test
         test = self._slice(from_row_number=len(self)-test_number, to_row_number=len(self))
         # Take another x from what is left at the end and not in test
