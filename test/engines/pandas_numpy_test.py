@@ -129,7 +129,7 @@ class TestOneHot(unittest.TestCase):
             self.assertEqual(fo.inference_ready, True, f'One Hot feature should be ready for inference')
             self.assertListEqual(fo.expand_names, mcc_c, f'Expanded names should match the column names')
 
-    def test_rest_base_inference_added_element(self):
+    def test_read_base_inference_added_element(self):
         fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
         fo = ft.FeatureOneHot('MCC_OH', fc)
         file = FILES_DIR + 'engine_test_base_comma.csv'
@@ -188,6 +188,7 @@ class TestNormalizeScale(unittest.TestCase):
             df_1 = df_1.iloc[:-1]
             df_2 = e.from_df(td, df, inference=True)
             self.assertEqual(df_1[s_name].equals(df_2[s_name]), True, f'Inference problem. Series not the same')
+            self.assertEqual(td.inference_ready, True, f'Tensor should still be ready for inference')
 
 
 class TestNormalizeStandard(unittest.TestCase):
@@ -227,6 +228,7 @@ class TestNormalizeStandard(unittest.TestCase):
             df_1 = df_1.iloc[:-1]
             df_2 = e.from_df(td, df, inference=True)
             self.assertEqual(df_1[s_name].equals(df_2[s_name]), True, f'Inference problem. Series not the same')
+            self.assertEqual(td.inference_ready, True, f'Tensor should still be ready for inference')
 
 
 class TestIndex(unittest.TestCase):
@@ -252,7 +254,43 @@ class TestIndex(unittest.TestCase):
             self.assertEqual(td.rank, 2, f'This should have been a rank 2 tensor. Got {td.rank}')
             self.assertListEqual(td2.categorical_features(True), [fi], f'Expanded Feature not correct')
 
-    # TODO More tests here
+    def test_read_remove_element(self):
+        fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
+        ind_name = 'MCC_ID'
+        fi = ft.FeatureIndex(ind_name, ft.FEATURE_TYPE_INT_16, fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(ft.TensorDefinition('All', [fc]), file, inference=False)
+            td = ft.TensorDefinition('Derived', [fi])
+            df_1 = e.from_df(td, df, inference=False)
+            # Now remove a line and run in inference mode
+            df = df.iloc[1:]
+            df_1 = df_1.iloc[1:]
+            df_2 = e.from_df(td, df, inference=True)
+            mcc_v = df_2[ind_name].unique()
+            self.assertEqual(df_1[ind_name].equals(df_2[ind_name]), True, f'Inference problem. Series not the same')
+            self.assertEqual(len(fi), len(mcc_v) + 1, f'Length of dictionary changed {len(fi)}')
+            self.assertEqual(td.inference_ready, True, f'Tensor should still be ready for inference')
+
+    def test_read_add_element(self):
+        fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
+        ind_name = 'MCC_ID'
+        fi = ft.FeatureIndex(ind_name, ft.FEATURE_TYPE_INT_16, fc)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df_c = e.from_csv(ft.TensorDefinition('All', [fc]), file, inference=False)
+            # Remove row and set variables. Also remove from categories!
+            df_r = df_c.iloc[1:].copy()
+            df_r['MCC'] = df_c['MCC'].cat.remove_categories(df_c['MCC'][0])
+            mcc_v = df_r['MCC'].unique()
+            # Run non-inference on removed panda
+            td = ft.TensorDefinition('Derived', [fi])
+            e.from_df(td, df_r, inference=False)
+            # And inference on original
+            df = e.from_df(td, df_c, inference=True)
+            self.assertEqual(len(fi), len(mcc_v), f'Length of dictionary changed {len(fi)}')
+            self.assertEqual(td.inference_ready, True, f'Tensor should still be ready for inference')
+            self.assertEqual(df[ind_name][0], 0, f'Missing row should have been default {df[ind_name][0]}')
 
 
 class TestReshape(unittest.TestCase):
