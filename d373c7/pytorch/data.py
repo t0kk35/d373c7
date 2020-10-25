@@ -48,14 +48,14 @@ class NumpyListDataSet(Dataset):
     :argument npl: The numpy list to use as base for the Pytorch Dataset.
     """
     @staticmethod
-    def _val_built_from(tensor_definition: TensorDefinition, npl: NumpyList):
+    def _val_built_from(npl: NumpyList, tensor_definition: TensorDefinition):
         if not npl.is_built_from(tensor_definition):
             raise PyTorchTrainException(
                 f'The NumpyList does not seem to be built from the given TensorDefinition'
             )
 
     def __init__(self, tensor_def: TensorDefinition, npl: NumpyList):
-        NumpyListDataSet._val_built_from(tensor_def, npl)
+        NumpyListDataSet._val_built_from(npl, tensor_def)
         self._npl = npl
         self._tensor_def = tensor_def
         self._dtypes = _DTypeHelper.get_dtypes(tensor_def)
@@ -107,41 +107,31 @@ class ClassSampler:
     :argument tensor_definition: The Tensor definition used to create the numpy List
     """
     @staticmethod
-    def _val_built_from(tensor_definition: TensorDefinition, npl: NumpyList):
+    def _val_built_from(npl: NumpyList, tensor_definition: TensorDefinition):
         if not npl.is_built_from(tensor_definition):
             raise PyTorchTrainException(
                 f'The NumpyList does not seem to be built from the given TensorDefinition'
             )
 
-    @staticmethod
-    def _val_batch_size(npl: NumpyList, batch_size: int, replacement: int):
-        if not replacement and batch_size > len(npl):
-            raise PyTorchTrainException(
-                f'Can not create weighted random sampler with batch size <{batch_size}> which is smaller than '
-                f'then length of the numpy-list <{len(npl)}> and replacement False'
-            )
-
     def __init__(self, tensor_definition: TensorDefinition, npl: NumpyList):
-        ClassSampler._val_built_from(tensor_definition, npl)
+        ClassSampler._val_built_from(npl, tensor_definition)
         self._npl = npl
         self._tensor_def = tensor_definition
 
-    def over_sampler(self, batch_size: int, replacement=True) -> Sampler:
+    def over_sampler(self, replacement=True) -> Sampler:
         """Create a RandomWeightedSampler that balances out the classes. It'll more or less return an equal amount of
         each class. For a binary fraud label this would mean about as much fraud as non-fraud samples.
 
-        :param batch_size: The number of samples to draw. This should match the batch size of the data-loader.
         :param replacement: Bool flag to trigger sample with replacement. With replacement a row can be drawn more
-            than once
+        than once
         """
-        ClassSampler._val_batch_size(self._npl, batch_size, replacement)
         label_index = self._tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
         _, class_balance = self._npl.unique(label_index)
         weights = 1./torch.tensor(class_balance, dtype=torch.float)
         sample_weights = weights[self._npl.lists[label_index].astype(int)]
         train_sampler = torch.utils.data.sampler.WeightedRandomSampler(
             weights=sample_weights,
-            num_samples=batch_size,
+            num_samples=len(self._npl),
             replacement=replacement
         )
         return train_sampler

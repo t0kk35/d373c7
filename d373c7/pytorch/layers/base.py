@@ -20,8 +20,8 @@ class LinDropAct(_Layer):
 
     :argument input_size: The size of the first layer. This must be the same as the output size of the previous layer
     :argument definition: A List of Tuples. Each entry in the list will be turned into a layer. The Tuples must be
-        of type [int, float]. The int is the number of features in that specific layer, the float is the dropout rate at
-        that layer. If the dropout is 0.0 no dropout will be performed.
+    of type [int, float]. The int is the number of features in that specific layer, the float is the dropout rate at
+    that layer. If the dropout is 0.0 no dropout will be performed.
     """
     def __init__(self, input_size: int, definition: List[Tuple[int, float]]):
         super(LinDropAct, self).__init__()
@@ -45,16 +45,18 @@ class LinDropAct(_Layer):
 
 
 class Embedding(_Layer):
-    """Layer that creates a set of torch embedding layers. One for each 'FeatureIndex' more specifically. The embeddings
-    will be concatenated in the forward operation. So this will take a tensor of torch.long, run each through a torch
-    embedding layer, concatenate the output, apply dropout and return.
+    """Layer that creates a set of torch embedding layers. One for each 'FeatureIndex' more specifically.
+    The embeddings will be concatenated in the forward operation. So this will take a tensor of torch.long, run each
+    through a torch embedding layer, concatenate the output, apply dropout and return.
 
     :argument tensor_def: A Tensor Definition describing the input. Each FeatureIndex in this definition will be turned
-        into an embedding layer
+    into an embedding layer
     :argument dropout: A float number that determines the dropout amount to apply. The dropout will be applied to the
-        concatenated output layer
+    concatenated output layer
+    :argument min_dims: The minimum dimension of an embedding.
+    :argument max_dims: The maximum dimension of an embedding.
     """
-    def __init__(self, tensor_def: TensorDefinition, dropout: float, min_dims=4, max_dims=50):
+    def __init__(self, tensor_def: TensorDefinition, dropout: float, min_dims: int, max_dims: int):
         super(Embedding, self).__init__()
         i_feature = [f for f in tensor_def.categorical_features() if isinstance(f, FeatureIndex)]
         emb_dim = [(len(f)+1, min(max(int(len(f)/2), min_dims), max_dims)) for f in i_feature]
@@ -128,7 +130,7 @@ class TensorDefinitionHead(_Layer):
                 f'Tensor definition <{tensor_def.name} has none of these.'
             )
 
-    def __init__(self, tensor_def: TensorDefinition):
+    def __init__(self, tensor_def: TensorDefinition, emb_dropout: float, emb_min_dim: int, emb_max_dim: int):
         TensorDefinitionHead._val_has_bin_or_con_or_cat_features(tensor_def)
         super(TensorDefinitionHead, self).__init__()
         self._rank = tensor_def.rank
@@ -142,7 +144,7 @@ class TensorDefinitionHead(_Layer):
             len(tensor_def.filter_features(lc, True)) for lc in lcs if lc in self._used_learning_categories.keys()
         )
         if LEARNING_CATEGORY_CATEGORICAL in self._used_learning_categories.keys():
-            self.embedding = Embedding(tensor_def, 0.1)
+            self.embedding = Embedding(tensor_def, emb_dropout, emb_min_dim, emb_max_dim)
             self._output_size += self.embedding.output_size
         else:
             self.embedding = None

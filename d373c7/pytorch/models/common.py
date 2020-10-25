@@ -7,13 +7,11 @@ import os
 import torch
 import torch.nn as nn
 from ..common import PyTorchTrainException
+from ..layers.base import TensorDefinitionHead
 from ..loss import _LossBase
 from ..optimizer import _Optimizer
-from ..layers import Embedding, SingleClassBinaryOutput
 from ...features.tensor import TensorDefinition
-from ...features.common import LearningCategory, LEARNING_CATEGORY_LABEL, LEARNING_CATEGORY_BINARY
-from ...features import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL
-from typing import List, Any
+from typing import List, Any, Optional, Type
 
 
 class PyTorchModelException(Exception):
@@ -22,10 +20,59 @@ class PyTorchModelException(Exception):
         super().__init__('Error in Model: ' + message)
 
 
+class ModelDefaults:
+    """Object where model defaults can be stored.
+    """
+    @staticmethod
+    def _val_not_none(value: Optional[Any], key: str):
+        if value is None:
+            raise PyTorchModelException(
+                f'Could not find default for key <{key}>'
+            )
+
+    @staticmethod
+    def _val_type(value: Optional[Any], e_type: Type, key: str):
+        if not isinstance(value, e_type):
+            raise PyTorchModelException(
+                f'Value for key <{key}> not of correct type. Got <{type(value)}, expected {e_type}>'
+            )
+
+    def __init__(self):
+        self._defaults = {}
+
+    def get_bool(self, key: str) -> bool:
+        v = self._defaults.get(key, None)
+        ModelDefaults._val_not_none(v, key)
+        ModelDefaults._val_type(v, bool, key)
+        return v
+
+    def get_str(self, key: str) -> str:
+        v = self._defaults.get(key, None)
+        ModelDefaults._val_not_none(v, key)
+        ModelDefaults._val_type(v, str, key)
+        return v
+
+    def get_int(self, key: str) -> int:
+        v = self._defaults.get(key, None)
+        ModelDefaults._val_not_none(v, key)
+        ModelDefaults._val_type(v, int, key)
+        return v
+
+    def get_float(self, key: str) -> float:
+        v = self._defaults.get(key, None)
+        ModelDefaults._val_not_none(v, key)
+        ModelDefaults._val_type(v, float, key)
+        return v
+
+    def set(self, key: str, value: any):
+        self._defaults[key] = value
+
+
 class _Model(nn.Module):
-    def __init__(self, tensor_def: TensorDefinition):
+    def __init__(self, tensor_def: TensorDefinition, defaults: ModelDefaults):
         nn.Module.__init__(self)
         self._tensor_def = tensor_def
+        self._model_defaults = defaults
 
     def _forward_unimplemented(self, *inp: Any) -> None:
         raise NotImplemented('Abstract method _forward_unimplemented not implemented')
@@ -63,8 +110,15 @@ class _Model(nn.Module):
     def num_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
+    @property
+    def defaults(self) -> ModelDefaults:
+        return self._model_defaults
+
     def optimizer(self, lr=None, wd=None) -> _Optimizer:
         pass
+
+    def extra_repr(self) -> str:
+        return f'Number of parameters : {self.num_parameters}'
 
 
 class _ModelManager:
@@ -101,3 +155,20 @@ class _ModelManager:
         if not os.path.exists(path):
             raise PyTorchTrainException(f'File {path} does not exist. Not loading model')
         self._model.load_state_dict(torch.load(path))
+
+
+class _TensorHeadModel(_Model):
+    def __init__(self, tensor_def: TensorDefinition, defaults: ModelDefaults):
+        super(_TensorHeadModel, self).__init__(tensor_def, defaults)
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        self.head = TensorDefinitionHead(tensor_def, do, mn, mx)
+
+    def forward(self, x):
+        x = self.head(x)
+        return x
+
+    def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
+        x = [ds[x] for x in self.head.x_indexes]
+        return x

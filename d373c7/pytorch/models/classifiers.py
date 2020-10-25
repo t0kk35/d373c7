@@ -4,8 +4,8 @@ Module for classifier Models
 """
 import logging
 import torch
-from .common import _Model, _LossBase, PyTorchModelException
-from ..layers import SingleClassBinaryOutput, TensorDefinitionHead, LinDropAct
+from .common import _Model, _LossBase, PyTorchModelException, ModelDefaults, _TensorHeadModel
+from ..layers import SingleClassBinaryOutput, LinDropAct
 from ..optimizer import _Optimizer, AdamWOptimizer
 from ..loss import SingleLabelBCELoss
 from ...features import TensorDefinition, LEARNING_CATEGORY_LABEL
@@ -24,8 +24,8 @@ class _ClassifierModel(_Model):
                 f'Can not build a classifier without a label. Please the .set_label(xyz) on the tensor definition'
             )
 
-    def __init__(self, tensor_def: TensorDefinition):
-        super(_ClassifierModel, self).__init__(tensor_def)
+    def __init__(self, tensor_def: TensorDefinition, defaults: ModelDefaults):
+        super(_ClassifierModel, self).__init__(tensor_def, defaults)
         _ClassifierModel._val_has_lc_label(tensor_def)
         self._label_index = tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
 
@@ -41,24 +41,23 @@ class _ClassifierModel(_Model):
         return ['acc', 'loss']
 
 
-class _TensorHeadModel(_Model):
-    def __init__(self, tensor_def: TensorDefinition):
-        super(_TensorHeadModel, self).__init__(tensor_def)
-        self.head = TensorDefinitionHead(tensor_def)
-        
-    def forward(self, x):
-        x = self.head(x)
-        return x
+class ClassifierDefaults(ModelDefaults):
+    def __init__(self):
+        super(ClassifierDefaults, self).__init__()
+        self.emb_dim(4, 100, 0.2)
+        self.set('lin_interlayer_drop_out', 0.1)
 
-    def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
-        x = [ds[x] for x in self.head.x_indexes]
-        return x
+    def emb_dim(self, minimum: int, maximum: int, dropout: float):
+        self.set('emb_min_dim', minimum)
+        self.set('emb_max_dim', maximum)
+        self.set('emb_dropout', dropout)
 
 
 class FeedForwardFraudClassifier(_ClassifierModel, _TensorHeadModel):
-    def __init__(self, tensor_def: TensorDefinition):
-        super(FeedForwardFraudClassifier, self).__init__(tensor_def)
-        self.linear = LinDropAct(self.head.output_size, [(16, 0.0)])
+    def __init__(self, tensor_def: TensorDefinition, defaults=ClassifierDefaults()):
+        super(FeedForwardFraudClassifier, self).__init__(tensor_def, defaults)
+        do = self.defaults.get_float('lin_interlayer_drop_out')
+        self.linear = LinDropAct(self.head.output_size, [(16, do)])
         self.out = SingleClassBinaryOutput(self.linear.output_size)
         self._loss_fn = SingleLabelBCELoss()
 
