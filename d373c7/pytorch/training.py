@@ -9,7 +9,6 @@ import torch
 import torch.utils.data as data
 from tqdm import tqdm
 from .common import _History
-from .history import TrainHistory
 from .loss import _LossBase
 from .optimizer import _Optimizer
 from .schedule import LRHistory, LinearLR
@@ -34,8 +33,8 @@ class Trainer(_ModelManager):
         _ModelManager.__init__(self, model, device)
         self._train_dl = train_dl
         self._val_dl = val_dl
-        self._train_history = TrainHistory(train_dl, model.default_metrics)
-        self._val_history = TrainHistory(val_dl, model.default_metrics)
+        self._train_history = model.history(train_dl)
+        self._val_history = model.history(val_dl)
 
     @staticmethod
     def _merge_histories(train: _History, val: _History, epoch: int) -> Dict:

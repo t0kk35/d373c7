@@ -108,7 +108,6 @@ class TestClassSampler(unittest.TestCase):
 
     def test_creation_base(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
-        bs = 5
         tdb = ft.TensorDefinition('Base', self.s_features)
         tdd = ft.TensorDefinition('Derived', self.d_features)
         tdd.set_label(self.d_features[-1])
@@ -118,14 +117,23 @@ class TestClassSampler(unittest.TestCase):
             npl = e.to_numpy_list(tdd, df)
             cs = pt.ClassSampler(tdd, npl)
             self.assertIsInstance(cs, pt.ClassSampler, f'Was expecting ClassSampler type {type(cs)}')
-            sm = cs.over_sampler(bs, replacement=False)
+            sm = cs.over_sampler(replacement=False)
             self.assertIsInstance(sm, data.WeightedRandomSampler, f'Was expecting Weighted Random Sampler {type(sm)}')
-            self.assertEqual(len(sm), bs, f'Length not correct {len(sm)}')
+            self.assertEqual(len(sm), len(npl), f'Length not correct {len(sm)}')
             self.assertListEqual(sorted(list(sm)), list(range(len(npl))), f'Each index should be in the weight list')
 
     def test_creation_bad(self):
-        # TODO Make some tests with bad npls and batch sizes.
-        pass
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        tdb = ft.TensorDefinition('Base', self.s_features)
+        tdd = ft.TensorDefinition('Derived', self.d_features)
+        tdd.set_label(self.d_features[-1])
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(tdb, file, inference=False)
+            df = e.from_df(tdd, df, inference=False)
+            npl = e.to_numpy_list(tdd, df)
+            # Should fail because wrong tensor definition. It does not match the numpy list
+            with self.assertRaises(pt.PyTorchTrainException):
+                _ = pt.ClassSampler(tdb, npl)
 
 
 def main():

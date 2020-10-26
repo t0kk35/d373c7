@@ -53,7 +53,7 @@ class _History:
     def start_step(self):
         self._step += 1
 
-    def end_step(self, o: torch.Tensor, y: List[torch.Tensor], loss: torch.Tensor):
+    def end_step(self, *args):
         pass
 
     def early_break(self) -> bool:

@@ -6,7 +6,7 @@ Common classes for all Pytorch Models
 import os
 import torch
 import torch.nn as nn
-from ..common import PyTorchTrainException
+from ..common import PyTorchTrainException, _History
 from ..layers.base import TensorDefinitionHead
 from ..loss import _LossBase
 from ..optimizer import _Optimizer
@@ -21,7 +21,7 @@ class PyTorchModelException(Exception):
 
 
 class ModelDefaults:
-    """Object where model defaults can be stored.
+    """Object where model defaults can be stored. This will avoid having too many parameters in each model creation.
     """
     @staticmethod
     def _val_not_none(value: Optional[Any], key: str):
@@ -116,6 +116,9 @@ class _Model(nn.Module):
 
     def optimizer(self, lr=None, wd=None) -> _Optimizer:
         pass
+
+    def history(self, *args) -> _History:
+        raise NotImplemented(f'History getter not implemented in base _History class. Must be implemented by children')
 
     def extra_repr(self) -> str:
         return f'Number of parameters : {self.num_parameters}'

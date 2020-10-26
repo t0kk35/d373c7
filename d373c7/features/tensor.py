@@ -30,6 +30,10 @@ class TensorDefinitionException(Exception):
 class TensorDefinition:
     """ A TensorDefinition is a container of features. A set of features can be bundled in a tensor definition. That
     tensor definition can then be constructed by the engines and used in modelling.
+
+    Args:
+        name: A name for this tensor definition
+        features: A list of features to group in this feature definition
     """
     def _val_rank_set(self):
         if self._rank is None:
