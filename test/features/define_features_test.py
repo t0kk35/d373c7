@@ -201,10 +201,17 @@ class TestIndexFeature(unittest.TestCase):
 
     def creation_non_int_type(self):
         name = 'index'
-        f_type = ft.FEATURE_TYPE_INT_16
+        f_type = ft.FEATURE_TYPE_BOOL
         fs = ft.FeatureSource('source', f_type)
         with self.assertRaises(ft.FeatureDefinitionException):
             _ = ft.FeatureIndex(name, ft.FEATURE_TYPE_FLOAT_32, fs)
+
+    def creation_base_bool(self):
+        name = 'index'
+        f_type = ft.FEATURE_TYPE_BOOL
+        fs = ft.FeatureSource('source', f_type)
+        with self.assertRaises(ft.FeatureDefinitionException):
+            _ = ft.FeatureIndex(name, ft.FEATURE_TYPE_INT_16, fs)
 
     def creation_base_float(self):
         name = 'index'
@@ -231,6 +238,47 @@ class TestIndexFeature(unittest.TestCase):
         self.assertNotEqual(fi1, fi3, f'Should have been not equal')
         self.assertNotEqual(fi1, fi4, f'Should not have been equal. Different Base Feature')
         self.assertNotEqual(fi1, fi5, f'Should not have been equal. Different Type')
+
+
+class TestFeatureLabelBinary(unittest.TestCase):
+    def test_create(self):
+        name = 'index'
+        f_type = ft.FEATURE_TYPE_INT_16
+        fs = ft.FeatureSource('source', f_type)
+        fl = ft.FeatureLabelBinary(name, fs)
+        self.assertIsInstance(fl, ft.FeatureLabelBinary, f'Unexpected Type {type(fl)}')
+        self.assertEqual(fl.name, name, f'Feature Name should be {name}')
+        self.assertEqual(fl.type, ft.FEATURE_TYPE_INT_8, f'Feature Type should be int8 {fl.type}')
+        self.assertEqual(fl.base_feature, fs, f'Base Feature Should have been the source feature')
+        self.assertEqual(len(fl.embedded_features), 1, f'Should only have 1 emb feature {len(fl.embedded_features)}')
+        self.assertIn(fs, fl.embedded_features, 'Base Feature should be in emb feature list')
+        self.assertEqual(fl.learning_category, ft.LEARNING_CATEGORY_LABEL, f'Learning type should be LABEL')
+
+    def creation_non_numerical_type(self):
+        name = 'index'
+        f_type = ft.FEATURE_TYPE_STRING
+        fs = ft.FeatureSource('source', f_type)
+        with self.assertRaises(ft.FeatureDefinitionException):
+            _ = ft.FeatureLabelBinary(name, fs)
+
+    def test_equality(self):
+        s_name_1 = 's_test_1'
+        s_name_2 = 's_test_2'
+        l_name_1 = 'l_test_1'
+        l_name_2 = 'l_test_2'
+        f_type_1 = ft.FEATURE_TYPE_INT_16
+        f_type_2 = ft.FEATURE_TYPE_INT_8
+        fs1 = ft.FeatureSource(s_name_1, f_type_1)
+        fs2 = ft.FeatureSource(s_name_2, f_type_2)
+        fl1 = ft.FeatureLabelBinary(l_name_1, fs1)
+        fl2 = ft.FeatureLabelBinary(l_name_1, fs1)
+        fl3 = ft.FeatureLabelBinary(l_name_2, fs1)
+        fl4 = ft.FeatureLabelBinary(l_name_1, fs2)
+        fl5 = ft.FeatureLabelBinary(l_name_1, fs1)
+        self.assertEqual(fl1, fl2, f'Should have been equal')
+        self.assertNotEqual(fl1, fl3, f'Should have been not equal')
+        self.assertEqual(fl1, fl4, f'Should have been equal')
+        self.assertEqual(fl1, fl5, f'Should have been equal')
 
 
 def main():

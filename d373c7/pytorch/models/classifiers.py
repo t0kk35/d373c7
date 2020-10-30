@@ -4,19 +4,19 @@ Module for classifier Models
 """
 import logging
 import torch
-import torch.utils.data as data
-from .common import _Model, _LossBase, PyTorchModelException, ModelDefaults, _TensorHeadModel, _History
+import torch.nn as nn
+from .common import _LossBase, PyTorchModelException, ModelDefaults, _TensorHeadModel, _History
 from ..layers import SingleClassBinaryOutput, LinDropAct
 from ..optimizer import _Optimizer, AdamWOptimizer
 from ..loss import SingleLabelBCELoss
-from ...features import TensorDefinition, LEARNING_CATEGORY_LABEL
+from ...features import TensorDefinition, LEARNING_CATEGORY_LABEL, FeatureLabelBinary
 from typing import List, Dict
 
 
 logger = logging.getLogger(__name__)
 
 
-class _ClassifierModel(_Model):
+class _ClassifierModel(_TensorHeadModel):
     @staticmethod
     def _val_has_lc_label(tensor_def: TensorDefinition):
         if LEARNING_CATEGORY_LABEL not in tensor_def.learning_categories:
@@ -37,48 +37,10 @@ class _ClassifierModel(_Model):
     def optimizer(self, lr=None, wd=None) -> _Optimizer:
         return AdamWOptimizer(self, lr, wd)
 
-    @property
-    def default_metrics(self) -> List[str]:
-        return ['acc', 'loss']
-
 
 class BinaryClassifierHistory(_History):
     loss_key = 'loss'
     acc_key = 'acc'
-
-    def _val_argument(self, args) -> data.DataLoader:
-        if not isinstance(args[0], data.DataLoader):
-            raise PyTorchModelException(
-                f'Argument during creation of {self.__class__.__name__} should have been a data loader. ' +
-                f'Was {type(args[0])}'
-            )
-        else:
-            return args[0]
-
-    @staticmethod
-    def _val_is_tensor(arg):
-        if not isinstance(arg, torch.Tensor):
-            raise PyTorchModelException(
-                f'Expected this argument to be a Tensor. Got {type(arg)}'
-            )
-
-    @staticmethod
-    def _val_is_tensor_list(arg):
-        if not isinstance(arg, List):
-            raise PyTorchModelException(
-                f'Expected this argument to be List. Got {type(arg)}'
-            )
-        if not isinstance(arg[0], torch.Tensor):
-            raise PyTorchModelException(
-                f'Expected this arguments list to contain tensors. Got {type(arg[0])}'
-            )
-
-    @staticmethod
-    def _val_same_shape(t1: torch.Tensor, t2: torch.Tensor):
-        if not t1.shape == t2.shape:
-            raise PyTorchModelException(
-                f'Shape of these tensors should have been the same. Got {t1.shape} and {t2.shape}'
-            )
 
     def __init__(self, *args):
         dl = self._val_argument(args)
@@ -89,18 +51,25 @@ class BinaryClassifierHistory(_History):
         self._running_correct_cnt = 0
         self._running_count = 0
 
+    @staticmethod
+    def _reshape_label(pr: torch.Tensor, lb: torch.Tensor) -> torch.Tensor:
+        if pr.shape == lb.shape:
+            return lb
+        elif len(pr.shape)-1 == len(lb.shape) and pr.shape[-1] == 1:
+            return torch.unsqueeze(lb, dim=len(pr.shape)-1)
+        else:
+            raise PyTorchModelException(
+                f'Incompatible shapes for prediction and label. Got {pr.shape} and {lb.shape}. Can not safely compare'
+            )
+
     def end_step(self, *args):
         BinaryClassifierHistory._val_is_tensor(args[0])
         BinaryClassifierHistory._val_is_tensor_list(args[1])
         BinaryClassifierHistory._val_is_tensor(args[2])
         pr, lb, loss = args[0], args[1][0], args[2]
-        BinaryClassifierHistory._val_same_shape(pr, lb)
+        lb = BinaryClassifierHistory._reshape_label(pr, lb)
         self._running_loss += loss.item()
-        p = torch.ge(pr, 0.5)
-        x = torch.eq(p, lb)
-        y = torch.sum(x)
-        self._running_correct_cnt += y.item()
-        # self._running_correct_cnt += torch.sum(torch.eq(p, lb[0])).item()
+        self._running_correct_cnt += torch.sum(torch.eq(torch.ge(pr, 0.5), lb)).item()
         self._running_count += pr.shape[0]
         super(BinaryClassifierHistory, self).end_step(pr, lb, loss)
 
@@ -131,6 +100,7 @@ class ClassifierDefaults(ModelDefaults):
     def __init__(self):
         super(ClassifierDefaults, self).__init__()
         self.emb_dim(4, 100, 0.2)
+        self.set_batch_norm(True)
         self.set('lin_interlayer_drop_out', 0.1)
 
     def emb_dim(self, minimum: int, maximum: int, dropout: float):
@@ -138,8 +108,23 @@ class ClassifierDefaults(ModelDefaults):
         self.set('emb_max_dim', maximum)
         self.set('emb_dropout', dropout)
 
+    def set_batch_norm(self, flag: bool) -> None:
+        """Define if a batch norm layer will be added before the final hidden layer.
 
-class FeedForwardFraudClassifier(_ClassifierModel, _TensorHeadModel):
+        :return: None
+        """
+        self.set('batch_norm', flag)
+
+    def set_inter_layer_drop_out(self, dropout: float) -> None:
+        """Sets the interlayer drop out parameter. Interlayer dropout is the drop out between linear layers.
+
+        :param dropout: Float number. Defined the amount of dropout to apply between linear layers.
+        :return: None
+        """
+        self.set('lin_interlayer_drop_out', dropout)
+
+
+class FeedForwardFraudClassifier(_ClassifierModel):
     """Create a FeedForward Fraud classifier neural net. This model only uses Linear (Feedforward) layers. It is the
     simplest form of Neural Net. The input will be run through a set of Linear layers and ends with a layer of size 1.
     This one number will be an interval between 0-1 and indicate how likely this is fraud. The model uses
@@ -167,18 +152,36 @@ class FeedForwardFraudClassifier(_ClassifierModel, _TensorHeadModel):
                 f'Layers parameter for {self.__class__.__name__} should contain ints. It contains <{type(layers[0])}>'
             )
 
+    @staticmethod
+    def _val_label(tensor_def: TensorDefinition):
+        if not len(tensor_def.label_features()) == 1:
+            raise PyTorchModelException(
+                f'The Tensor Definition of a binary model must contain exactly one LEARNING_CATEGORY_LABEL feature.' +
+                f'Got {len(tensor_def.label_features())} of them'
+            )
+        if not isinstance(tensor_def.label_features()[0], FeatureLabelBinary):
+            raise PyTorchModelException(
+                f'The LEARNING_CATEGORY_LABEL feature of a Tensor Definition must be of type' +
+                f'{FeatureLabelBinary.__class__.__name__} '
+            )
+
     def __init__(self, tensor_def: TensorDefinition, layers: List[int], defaults=ClassifierDefaults()):
         super(FeedForwardFraudClassifier, self).__init__(tensor_def, defaults)
         self._val_layers(layers)
+        self._val_label(tensor_def)
         do = self.defaults.get_float('lin_interlayer_drop_out')
+        bn = self.defaults.get_bool('batch_norm')
         ly = [(i, do) for i in layers]
         self.linear = LinDropAct(self.head.output_size, ly)
+        self.bn = nn.BatchNorm1d(self.linear.output_size) if bn else None
         self.out = SingleClassBinaryOutput(self.linear.output_size)
         self._loss_fn = SingleLabelBCELoss()
 
     def forward(self, x):
         x = _TensorHeadModel.forward(self, x)
         x = self.linear(x)
+        if self.bn is not None:
+            x = self.bn(x)
         x = self.out(x)
         return x
 
@@ -186,4 +189,4 @@ class FeedForwardFraudClassifier(_ClassifierModel, _TensorHeadModel):
         return self._loss_fn
 
     def history(self, *args) -> _History:
-        return BinaryClassifierHistory(args)
+        return BinaryClassifierHistory(*args)

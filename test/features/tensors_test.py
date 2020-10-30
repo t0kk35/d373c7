@@ -49,20 +49,6 @@ class TestTensorCreate(unittest.TestCase):
         t = ft.TensorDefinition(name_t, [f1, f2])
         self.assertEqual(len(t), len([f1, f2]), f'Tensor definition length not working. Got {len(t)}')
 
-    def test_set_label(self):
-        name_t = 'test-tensor'
-        f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
-        f2 = ft.FeatureSource('test-feature-2', ft.FEATURE_TYPE_STRING)
-        f3 = ft.FeatureSource('test-feature-3', ft.FEATURE_TYPE_STRING)
-        t = ft.TensorDefinition(name_t, [f1, f2])
-        t.set_label(f1)
-        self.assertListEqual(t.label_features(), [f1])
-        t2 = ft.TensorDefinition(name_t, [f1, f2])
-        t2.set_labels([f1, f2])
-        self.assertListEqual(t2.label_features(), [f1, f2])
-        with self.assertRaises(ft.TensorDefinitionException):
-            t2.set_label(f3)
-
     def test_filtering(self):
         name_t = 'test-tensor'
         f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
@@ -72,9 +58,8 @@ class TestTensorCreate(unittest.TestCase):
         f5 = ft.FeatureSource('test-feature-5', ft.FEATURE_TYPE_FLOAT)
         f6 = ft.FeatureNormalizeScale('test-feature-6', ft.FEATURE_TYPE_FLOAT, f5)
         f7 = ft.FeatureNormalizeStandard('test-feature-7', ft.FEATURE_TYPE_FLOAT, f5)
-        f8 = ft.FeatureSource('test-feature-8', ft.FEATURE_TYPE_FLOAT)
+        f8 = ft.FeatureLabelBinary('test-feature-8', f2)
         t = ft.TensorDefinition(name_t, [f1, f2, f3, f4, f5, f6, f7, f8])
-        t.set_label(f8)
         self.assertEqual(len(t.learning_categories), 4, f'Should be 4 categories. Got {len(t.learning_categories)}')
         self.assertListEqual(t.categorical_features(), [f2])
         self.assertListEqual(t.binary_features(), [f4])

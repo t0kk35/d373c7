@@ -15,6 +15,15 @@ from ..features.base import FeatureIndex
 from typing import Tuple
 
 
+class PlotException(Exception):
+    """ Exception thrown when a there is a problem plotting
+    Args:
+        message: A free form text message describing the error
+    """
+    def __init__(self, message: str):
+        super().__init__("Error Plotting : " + message)
+
+
 class TrainPlot:
     def __init__(self):
         self._def_style = 'ggplot'
@@ -25,8 +34,8 @@ class TrainPlot:
         style.use(self._def_style)
         _ = plt.figure(figsize=fig_size)
         plt.clf()
-        plt.title('Training and Validation metrics')
-        plt.xlabel('Epoch')
+        plt.title('Training Metrics')
+        plt.suptitle('Training and Validation')
         axis = []
         epochs = [i for i in range(1, train.epoch+1)]
 
@@ -36,6 +45,7 @@ class TrainPlot:
                 ax = plt.subplot2grid((2, 1), (i, 0))
             else:
                 ax = plt.subplot2grid((2, 1), (i, 0), sharex=axis[0])
+            ax.set(xlabel='Epoch')
             ax.plot(epochs, train.history[k], label=f'train_{k}')
             ax.plot(epochs, val.history[k], label=f'val_{k}')
             if train.history[k][0] > train.history[k][-1]:
@@ -136,21 +146,43 @@ class TestPlot:
 
 
 class LayerPlot:
+    @staticmethod
+    def _val_dims(dims: int):
+        if dims < 1 or dims > 3:
+            raise PlotException(
+                f'Dimensions parameter must be 1 or 2. Got <{dims}>'
+            )
+
     def __init__(self):
         self._def_style = 'ggplot'
 
-    def plot_embedding(self, embedding_weights: np.array, feature: FeatureIndex, fig_size: Tuple[float, float] = None):
+    def plot_embedding(self, feature: FeatureIndex, embedding_weights: np.array, dims: int = 2,
+                       fig_size: Tuple[float, float] = None):
+        LayerPlot._val_dims(dims)
         style.use(self._def_style)
-        p = PCA(n_components=2)
+        p = PCA(n_components=dims)
         p_e = p.fit_transform(embedding_weights)
         _ = plt.figure(figsize=fig_size)
         plt.clf()
-        x, y = p_e[:, 0], p_e[:, 1]
-        plt.scatter(x, y)
-        # Annotate with Label
-        for i, l in enumerate(feature.dictionary.keys()):
-            plt.annotate(l, (x[i], y[i]))
+        if dims == 2:
+            # Make 2 dim plot
+            x, y = p_e[:, 0], p_e[:, 1]
+            plt.scatter(x, y)
+            # Annotate with Label
+            for i, l in enumerate(feature.dictionary.keys()):
+                plt.annotate(l, (x[i], y[i]))
+            plt.xlabel('Component 1')
+            plt.ylabel('Component 2')
+        elif dims == 3:
+            # Make 3 dim plot
+            x, y, z = p_e[:, 0], p_e[:, 1], p_e[:, 2]
+            ax = plt.gca(projection='3d')
+            ax.scatter(x, y, z)
+            # Annotate with Label
+            for i, l in enumerate(feature.dictionary.keys()):
+                ax.text(x[i], y[i], z[i], l)
+            ax.set_xlabel('Component 1')
+            ax.set_ylabel('Component 2')
+            ax.set_zlabel('Component 3')
         plt.title(f'Embedding {feature.name}. Explained variance {p.explained_variance_ratio_}')
-        plt.xlabel('Component 1')
-        plt.ylabel('Component 2')
         plt.show()

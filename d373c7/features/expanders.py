@@ -4,8 +4,8 @@ Definition of expander features.
 """
 from typing import List
 from ..features.common import LEARNING_CATEGORY_BINARY, LearningCategory
-from ..features.common import Feature, FeatureInferenceAttributes, FeatureTypeString, FEATURE_TYPE_INT_8
-from ..features.common import FeatureDefinitionException
+from ..features.common import Feature, FeatureInferenceAttributes, FeatureTypeString, FeatureTypeInteger
+from ..features.common import FeatureDefinitionException, FEATURE_TYPE_INT_8
 from ..features.common import not_implemented
 from ..features.base import FeatureVirtual
 
@@ -40,15 +40,16 @@ class FeatureOneHot(FeatureExpander):
         base_feature: The base feature which will be one hot encoded.
     """
     @staticmethod
-    def _val_type_is_string(base_feature: Feature):
-        if not isinstance(base_feature.type, FeatureTypeString):
+    def _val_type_is_or_int_string(base_feature: Feature):
+        if not isinstance(base_feature.type, FeatureTypeString) and \
+                not isinstance(base_feature.type, FeatureTypeInteger):
             raise FeatureDefinitionException(
-                f'The base feature parameter of a one-hot feature must be a string-type. '
+                f'The base feature parameter of a one-hot feature must be a string or integer type. '
                 f'Found [{type(base_feature.type)}]'
             )
 
     def __init__(self, name, base_feature: Feature):
-        FeatureOneHot._val_type_is_string(base_feature)
+        FeatureOneHot._val_type_is_or_int_string(base_feature)
         # Use smallest possible type. Can only take 0 or 1 as value
         Feature.__init__(self, name, FEATURE_TYPE_INT_8)
         self._base_feature = base_feature

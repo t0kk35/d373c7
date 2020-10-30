@@ -333,8 +333,8 @@ class TestToNumpy(unittest.TestCase):
         td1 = ft.TensorDefinition('Source', [fa, fm, fc, ff])
         fo = ft.FeatureOneHot('MCC_OH', fc)
         fi = ft.FeatureIndex('MCC_ID', ft.FEATURE_TYPE_INT_16, fm)
-        td2 = ft.TensorDefinition('Derived', [fa, fo, fi, ff])
-        td2.set_label(ff)
+        fl = ft.FeatureLabelBinary('Fraud_Label', ff)
+        td2 = ft.TensorDefinition('Derived', [fa, fo, fi, fl])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
             df = e.from_df(td2, df, inference=False)
@@ -365,8 +365,8 @@ class TestToNumpy(unittest.TestCase):
                     self.assertEqual(l.min(initial=10), 0, f'Min wrong {l.min(initial=10)}')
                     self.assertEqual(l.max(initial=0), 1, f'Min wrong {l.min(initial=0)}')
                 if lc == ft.LEARNING_CATEGORY_LABEL:
-                    self.assertEqual(l.min(initial=1000), df[ff.name].min(), f'Min do not match {l.min(initial=1000)}')
-                    self.assertEqual(l.max(initial=0), df[ff.name].max(), f'Max do not match {l.max(initial=0)}')
+                    self.assertEqual(int(l.min(initial=10)), df[fl.name].min(), f'Min problem {l.min(initial=1000)}')
+                    self.assertEqual(int(l.max(initial=0)), df[fl.name].max(), f'Max do not match {l.max(initial=0)}')
 
 
 class TestIsBuiltFrom(unittest.TestCase):
@@ -379,8 +379,8 @@ class TestIsBuiltFrom(unittest.TestCase):
         td1 = ft.TensorDefinition('Source', [fa, fm, fc, ff])
         fo = ft.FeatureOneHot('MCC_OH', fc)
         fi = ft.FeatureIndex('MCC_ID', ft.FEATURE_TYPE_INT_16, fm)
-        td2 = ft.TensorDefinition('Derived', [fa, fo, fi, ff])
-        td2.set_label(ff)
+        fl = ft.FeatureLabelBinary('Fraud_Label', ff)
+        td2 = ft.TensorDefinition('Derived', [fa, fo, fi, fl])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
             df = e.from_df(td2, df, inference=False)

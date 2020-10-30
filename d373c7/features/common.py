@@ -154,10 +154,19 @@ class Feature:
 
     @property
     def embedded_features(self) -> List['Feature']:
+        """Return the feature that are embedded in this feature. This can loosely be interpreted as the feature on which
+        this feature depends. Feature that need to be known to build this feature.
+
+        :return: List of embedded features. And empty list if there are no embedded features.
+        """
         return not_implemented(self)
 
     @property
     def learning_category(self) -> LearningCategory:
+        """Get the learning category of this feature. Will drive the sort of learning operations that are available
+
+        :return: The Learning Category. An instance of 'LearningCategory'
+        """
         return not_implemented(self)
 
 
@@ -168,4 +177,9 @@ class FeatureInferenceAttributes(Feature):
     """
     @property
     def inference_ready(self) -> bool:
+        """Returns a bool indicating if the feature is ready for inference. Some features need to have been trained
+        first or loaded so the know some of the inference attributes they will need to build the feature.
+
+        :return: True is the feature is ready for inference
+        """
         return not_implemented(self)

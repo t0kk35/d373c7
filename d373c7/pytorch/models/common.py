@@ -10,6 +10,7 @@ from ..common import PyTorchTrainException, _History
 from ..layers.base import TensorDefinitionHead
 from ..loss import _LossBase
 from ..optimizer import _Optimizer
+from ...features.base import FeatureIndex
 from ...features.tensor import TensorDefinition
 from typing import List, Any, Optional, Type
 
@@ -103,10 +104,6 @@ class _Model(nn.Module):
                              f'Needs to be implemented by the child classes')
 
     @property
-    def default_metrics(self) -> List[str]:
-        raise NotImplemented()
-
-    @property
     def num_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
@@ -175,3 +172,9 @@ class _TensorHeadModel(_Model):
     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
         x = [ds[x] for x in self.head.x_indexes]
         return x
+
+    def embedding_weights(self, feature: FeatureIndex, as_numpy: bool = False):
+        w = self.head.embedding_weight(feature)
+        if as_numpy:
+            w = w.cpu().detach().numpy()
+        return w

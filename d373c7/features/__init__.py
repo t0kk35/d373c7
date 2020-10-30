@@ -9,7 +9,8 @@ from .common import FEATURE_TYPE_STRING
 from .common import LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_CONTINUOUS
 from .common import LEARNING_CATEGORY_NONE, LEARNING_CATEGORY_LABEL
 from .common import FeatureDefinitionException
-from .base import FeatureSource, FeatureVirtual, FeatureIndex
+from .base import FeatureSource, FeatureVirtual, FeatureIndex, FeatureBin
 from .expanders import FeatureOneHot
+from .labels import FeatureLabelBinary
 from .normalizers import FeatureNormalizeScale, FeatureNormalizeStandard
 from .tensor import TensorDefinition, TensorDefinitionException

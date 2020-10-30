@@ -19,6 +19,33 @@ class _History:
 
     :argument dl: A Data loader that will be iterated over in the training or validation loop.
     """
+    def _val_argument(self, args) -> data.DataLoader:
+        if not isinstance(args[0], data.DataLoader):
+            raise PyTorchTrainException(
+                f'Argument during creation of {self.__class__.__name__} should have been a data loader. ' +
+                f'Was {type(args[0])}'
+            )
+        else:
+            return args[0]
+
+    @staticmethod
+    def _val_is_tensor(arg):
+        if not isinstance(arg, torch.Tensor):
+            raise PyTorchTrainException(
+                f'Expected this argument to be a Tensor. Got {type(arg)}'
+            )
+
+    @staticmethod
+    def _val_is_tensor_list(arg):
+        if not isinstance(arg, List):
+            raise PyTorchTrainException(
+                f'Expected this argument to be List. Got {type(arg)}'
+            )
+        if not isinstance(arg[0], torch.Tensor):
+            raise PyTorchTrainException(
+                f'Expected this arguments list to contain tensors. Got {type(arg[0])}'
+            )
+
     def __init__(self, dl: data.DataLoader):
         self._batch_size = dl.batch_size
         self._samples = len(dl.dataset)

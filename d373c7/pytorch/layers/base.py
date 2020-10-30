@@ -56,10 +56,22 @@ class Embedding(_Layer):
     :argument min_dims: The minimum dimension of an embedding.
     :argument max_dims: The maximum dimension of an embedding.
     """
+    def _val_feature_in_embedding(self, feature: FeatureIndex):
+        if not isinstance(feature, FeatureIndex):
+            raise PyTorchLayerException(
+                f'Feature <{feature.name}> is not of type {FeatureIndex.__class__}. Embedding only work with ' +
+                f'Index Features'
+            )
+        if feature not in self._i_features:
+            raise PyTorchLayerException(
+                f'Feature <{feature.name}> is not known to this embedding layer. Please check the model was created ' +
+                f'with a Tensor Definition than contains this feature'
+            )
+
     def __init__(self, tensor_def: TensorDefinition, dropout: float, min_dims: int, max_dims: int):
         super(Embedding, self).__init__()
-        i_feature = [f for f in tensor_def.categorical_features() if isinstance(f, FeatureIndex)]
-        emb_dim = [(len(f)+1, min(max(int(len(f)/2), min_dims), max_dims)) for f in i_feature]
+        self._i_features = [f for f in tensor_def.categorical_features() if isinstance(f, FeatureIndex)]
+        emb_dim = [(len(f)+1, min(max(int(len(f)/2), min_dims), max_dims)) for f in self._i_features]
         self._out_size = sum([y for _, y in emb_dim])
         self.embeddings = nn.ModuleList([nn.Embedding(x, y) for x, y in emb_dim])
         self.dropout = nn.Dropout(dropout)
@@ -78,6 +90,12 @@ class Embedding(_Layer):
             raise PyTorchLayerException(f'Don\'t know how to handle embedding with input tensor of rank {len(s)}')
         x = self.dropout(x)
         return x
+
+    def embedding_weight(self, feature: FeatureIndex) -> torch.Tensor:
+        self._val_feature_in_embedding(feature)
+        i = self._i_features.index(feature)
+        w = self.embeddings[i].weight
+        return w
 
 
 class BinaryOutput(_Layer):
@@ -177,3 +195,6 @@ class TensorDefinitionHead(_Layer):
                     cat_list.append(p)
         x = torch.cat(cat_list, dim=1)
         return x
+
+    def embedding_weight(self, feature: FeatureIndex) -> torch.Tensor:
+        return self.embedding.embedding_weight(feature)

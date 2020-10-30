@@ -107,7 +107,7 @@ class Trainer(_ModelManager):
                 bar.set_postfix(self._merge_histories(self._train_history, self._val_history, epoch))
         return self._train_history, self._val_history
 
-    def find_lr(self, start_lr: float, end_lr: float, wd: float = 0.0, max_steps: int = 100) -> LRHistory:
+    def find_lr(self, start_lr: float, end_lr: float, max_steps: int = 100, wd: float = 0.0) -> LRHistory:
         # Save model and optimizer state, so we can restore
         save_file = './temp_model.pt'
         logger.info(f'Saving model under {save_file}')

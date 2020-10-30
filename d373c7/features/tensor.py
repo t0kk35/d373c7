@@ -41,13 +41,6 @@ class TensorDefinition:
                 f'The Rank of Tensor Definition <{self.name}> has not been set. Can not retrieve it'
             )
 
-    def _val_labels_defined(self, labels: List[Feature]):
-        for lb in labels:
-            if lb not in self.features:
-                raise TensorDefinitionException(
-                    f'Label <{lb.name}> does not exist in tensor definition <{self.name}>'
-                )
-
     def _val_duplicate_entries(self):
         if len(list(set(self.features))) != len(self.features):
             raise TensorDefinitionException(
@@ -91,7 +84,6 @@ class TensorDefinition:
             self._features_list = features
         self._val_duplicate_entries()
         self._val_base_feature_overlap()
-        self._labels = []
 
     def __len__(self):
         return len(self.features)
@@ -175,15 +167,6 @@ class TensorDefinition:
                 r.append(f)
         return r
 
-    def set_label(self, label: Feature) -> 'TensorDefinition':
-        """Define which feature in this Tensor Definition will be used as label for training
-
-        :param: The feature that should be use a training target.
-        """
-        self._val_labels_defined([label])
-        self._labels.append(label)
-        return self
-
     @property
     def highest_precision_feature(self) -> Feature:
         """Return the highest precision (numerical) feature in this Tensor Definition.
@@ -195,14 +178,6 @@ class TensorDefinition:
         t.sort(key=lambda x: x.type.precision)
         # Last has biggest precision
         return t[-1]
-
-    def set_labels(self, labels: List[Feature]):
-        """Define which of the features in the Tensor Definition will be used as label for training.
-
-        :param labels: List of feature that need to treated as labels during training.
-        """
-        self._val_labels_defined(labels)
-        self._labels.extend(labels)
 
     def remove(self, feature: Feature) -> None:
         self._features_list.remove(feature)
@@ -219,13 +194,11 @@ class TensorDefinition:
         """
         if expand:
             self._val_inference_ready('filter ' + category.name)
-        if category == LEARNING_CATEGORY_LABEL:
-            return self._labels
-        else:
-            r = [f for f in self.features if f.learning_category == category and f not in self._labels]
-            if expand:
-                r = TensorDefinition._expand_features(r)
-            return r
+
+        r = [f for f in self.features if f.learning_category == category]
+        if expand:
+            r = TensorDefinition._expand_features(r)
+        return r
 
     def categorical_features(self, expand=False) -> List[Feature]:
         """Return the categorical features in this Tensor Definition.

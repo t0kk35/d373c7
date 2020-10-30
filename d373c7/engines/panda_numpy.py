@@ -14,11 +14,11 @@ from .common import EngineContext
 from .numpy_helper import NumpyList
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL, FeatureInferenceAttributes
 from ..features.common import FeatureTypeInteger
-from ..features.common import LEARNING_CATEGORY_NONE
-from ..features.base import FeatureSource, FeatureIndex
+from ..features.base import FeatureSource, FeatureIndex, FeatureBin
 from ..features.tensor import TensorDefinition
 from ..features.expanders import FeatureExpander, FeatureOneHot
 from ..features.normalizers import FeatureNormalize, FeatureNormalizeScale, FeatureNormalizeStandard
+from ..features.labels import FeatureLabel, FeatureLabelBinary
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class EnginePandasNumpy(EngineContext):
 
     @staticmethod
     def _val_single_date_format_code(format_codes: List[str]):
-        """Validation function to check that there is a single format code for dates across a set of format codes.
+        """Validation function to check that there is a 01_single format code for dates across a set of format codes.
 
         :param format_codes: List of format codes from feature definitions. Is a string
         :return: None
@@ -182,13 +182,15 @@ class EnginePandasNumpy(EngineContext):
         """
         logger.info(f'Building Panda for : <{tensor_def.name}> from DataFrame. Inference mode <{inference}>')
         self._val_ready_for_inference(tensor_def, inference)
-        all_features = tensor_def.embedded_features
+        all_features = tensor_def.features
         self._val_features_defined_as_columns(df, all_features)
 
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
         normalizer_features = [field for field in all_features if isinstance(field, FeatureNormalize)]
         index_features = [field for field in all_features if isinstance(field, FeatureIndex)]
         one_hot_features = [field for field in all_features if isinstance(field, FeatureOneHot)]
+        label_features = [field for field in all_features if isinstance(field, FeatureLabel)]
+        bin_features = [field for field in all_features if isinstance(field, FeatureBin)]
 
         self._val_check_known_logic(
             all_features,
@@ -196,7 +198,9 @@ class EnginePandasNumpy(EngineContext):
                 source_features,
                 normalizer_features,
                 index_features,
-                one_hot_features
+                one_hot_features,
+                label_features,
+                bin_features
             ])
 
         # Start processing
@@ -204,6 +208,8 @@ class EnginePandasNumpy(EngineContext):
         df = _FeatureProcessor.process_one_hot_feature(df, one_hot_features, inference, self.one_hot_prefix)
         df = _FeatureProcessor.process_index_feature(df, index_features, inference)
         df = _FeatureProcessor.process_normalize_feature(df, normalizer_features, inference)
+        df = _FeatureProcessor.process_label_feature(df, label_features)
+        df = _FeatureProcessor.process_bin_feature(df, bin_features, inference)
 
         # Only return base features in the tensor_definition. No need to return the embedded features.
         # Remember that expander features can contain multiple columns.
@@ -327,6 +333,12 @@ class _FeatureProcessor:
                                             f'Please choose a data type that can hold bigger numbers')
 
     @staticmethod
+    def _val_int_is_binary(df: pd.DataFrame, feature: FeatureLabel):
+        u = sorted(list(pd.unique(df[feature.base_feature.name])))
+        if not u == [0, 1]:
+            raise EnginePandaNumpyException(f'Binary Feature <{feature.name}> should only contain values 0 and 1 ')
+
+    @staticmethod
     def process_source_feature(df: pd.DataFrame, features: List[FeatureSource]) -> pd.DataFrame:
         # Apply defaults for source data fields of type 'CATEGORICAL'
         for feature in features:
@@ -415,4 +427,35 @@ class _FeatureProcessor:
             if df[feature.base_feature.name].dtype.name == 'category':
                 df[feature.base_feature.name].cat.add_categories([0], inplace=True)
             df[feature.name] = df[feature.base_feature.name].map(feature.dictionary).fillna(0).astype(t)
+        return df
+
+    @staticmethod
+    def process_label_feature(df: pd.DataFrame, features: List[FeatureLabel]) -> pd.DataFrame:
+        for feature in [f for f in features if isinstance(f, FeatureLabelBinary)]:
+            _FeatureProcessor._val_int_is_binary(df, feature)
+            df[feature.name] = df[feature.base_feature.name].copy().astype('int8')
+        return df
+
+    @staticmethod
+    def process_bin_feature(df: pd.DataFrame, features: List[FeatureBin], inference: bool) -> pd.DataFrame:
+        # Add the binning features
+        for feature in features:
+            if not inference:
+                # Geometric space can not start for 0
+                if feature.scale_type == FeatureBin.ScaleTypeGeometric:
+                    mn = max(df[feature.base_feature.name].min(), 1e-1)
+                else:
+                    mn = df[feature.base_feature.name].min()
+                mx = df[feature.base_feature.name].max()
+                if feature.scale_type == FeatureBin.ScaleTypeGeometric:
+                    bins = np.geomspace(mn, mx, feature.number_of_bins)
+                else:
+                    bins = np.linspace(mn, mx, feature.number_of_bins)
+                # Set inference attributes
+                feature.bins = list(bins)
+            bins = np.array(feature.bins)
+            t = np.dtype(EnginePandasNumpy.panda_type(feature))
+            labels = np.array(feature.range).astype(np.dtype(t))
+            cut = pd.cut(df[feature.base_feature.name], bins=bins, labels=labels)
+            df[feature.name] = cut.cat.add_categories(0).fillna(0)
         return df
