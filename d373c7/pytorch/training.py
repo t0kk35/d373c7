@@ -15,6 +15,7 @@ from .schedule import LRHistory, LinearLR
 # noinspection PyProtectedMember
 from .models.common import _Model, _ModelManager
 # inspection PyProtectedMember
+from ..features.common import LEARNING_CATEGORY_LABEL
 from typing import Tuple, Dict, List
 
 
@@ -207,12 +208,18 @@ class Tester(_ModelManager):
                     ds = [d.to(device, non_blocking=True) for d in ds]
                     x = Tester._get_x(model, ds)
                     y = Trainer._get_y(model, ds)
-                    s = loss_fn.score(model(*x), y)
+                    s = loss_fn.score(model(x), y)
                     score.append(s)
                     bar.update(1)
                     del ds
         return score
 
-    def score(self, loss_fn: _LossBase) -> List[torch.Tensor]:
-        self._model.to(self._device)
-        return Tester._score_step(self._model, self._device, self._test_dl, loss_fn)
+    def score_plot(self) -> Tuple[np.array, np.array]:
+        # Model to GPU
+        label_index = self.model.tensor_definition.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        self.model.to(self._device)
+        scores = Tester._score_step(self.model, self._device, self._test_dl, self.model.loss_fn())
+        scores = torch.cat(scores, dim=0).cpu().numpy()
+        lb = [ds[label_index] for ds in iter(self._test_dl)]
+        lb = torch.squeeze(torch.cat(lb, dim=0)).cpu().numpy()
+        return scores, lb

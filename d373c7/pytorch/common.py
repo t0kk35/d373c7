@@ -46,12 +46,13 @@ class _History:
                 f'Expected this arguments list to contain tensors. Got {type(arg[0])}'
             )
 
-    def __init__(self, dl: data.DataLoader):
+    def __init__(self, dl: data.DataLoader, history: Dict[str, List]):
         self._batch_size = dl.batch_size
         self._samples = len(dl.dataset)
         self._step = 0
         self._steps = len(dl)
         self._epoch = 0
+        self._history = history
 
     @property
     def batch_size(self):
@@ -67,7 +68,7 @@ class _History:
 
     @property
     def history(self) -> Dict:
-        raise NotImplemented('history property not implemented')
+        return self._history
 
     @property
     def epoch(self):

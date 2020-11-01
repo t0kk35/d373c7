@@ -8,15 +8,17 @@ import torch
 import torch.nn as nn
 # noinspection PyProtectedMember
 from torch.nn.modules.loss import _Loss as TorchLoss
-from typing import Type
+from typing import Type, List, Any
 
 
 class _LossBase:
     """Loss function object fed to the training """
     def __init__(self, loss_fn: Type[TorchLoss], reduction: str):
         self._training_loss = loss_fn(reduction=reduction)
+        self._score_loss = torch.nn.BCELoss(reduction='none')
+        self._aggregator = torch.sum if reduction == 'sum' else torch.mean
 
-    def __call__(self, *args, **kwargs) -> torch.Tensor:
+    def __call__(self, *args, **kwargs) -> List[torch.Tensor]:
         raise NotImplemented('Call not implemented for loss function')
 
     def score(self, *args, **kwargs) -> torch.Tensor:
@@ -26,17 +28,30 @@ class _LossBase:
     def train_loss(self) -> TorchLoss:
         return self._training_loss
 
+    @property
+    def score_loss(self) -> TorchLoss:
+        return self._score_loss
+
+    @property
+    def score_aggregator(self) -> Any:
+        return self._aggregator
+
 
 class SingleLabelBCELoss(_LossBase):
     def __init__(self, reduction='mean'):
         _LossBase.__init__(self, nn.BCELoss, reduction)
-        self._train_loss = torch.nn.BCELoss(reduction=reduction)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> List[torch.Tensor]:
         pr = torch.squeeze(args[0])
         lb = torch.squeeze(args[1][0])
         loss = self.train_loss(pr, lb)
         return loss
+
+    def score(self, *args, **kwargs) -> torch.Tensor:
+        pr = torch.squeeze(args[0])
+        lb = torch.squeeze(args[1][0])
+        loss = self.score_loss(pr, lb)
+        return self.score_aggregator(loss, dim=1)
 
 
 class _LossBaseScore(_LossBase):

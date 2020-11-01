@@ -44,9 +44,8 @@ class BinaryClassifierHistory(_History):
 
     def __init__(self, *args):
         dl = self._val_argument(args)
-        _History.__init__(self, dl)
-
-        self._history = {m: [] for m in [BinaryClassifierHistory.loss_key, BinaryClassifierHistory.acc_key]}
+        h = {m: [] for m in [BinaryClassifierHistory.loss_key, BinaryClassifierHistory.acc_key]}
+        _History.__init__(self, dl, h)
         self._running_loss = 0
         self._running_correct_cnt = 0
         self._running_count = 0
@@ -80,10 +79,6 @@ class BinaryClassifierHistory(_History):
         self._running_count = 0
         self._running_loss = 0
         super(BinaryClassifierHistory, self).end_epoch()
-
-    @property
-    def history(self) -> Dict:
-        return self._history
 
     def step_stats(self) -> Dict:
         r = {

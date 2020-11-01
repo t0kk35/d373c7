@@ -74,12 +74,12 @@ class TestPlot:
         self._def_style = 'ggplot'
 
     @staticmethod
-    def print_classification_report(prd_lab: Tuple[np.array, np.array]):
+    def print_classification_report(prd_lab: Tuple[np.array, np.array], threshold=0.5):
         predictions = prd_lab[0]
         labels = prd_lab[1]
         ap_score = average_precision_score(labels, predictions)
         auc_score = roc_auc_score(labels, predictions)
-        predictions = (predictions > 0.5)
+        predictions = (predictions > threshold)
         cr = classification_report(labels, predictions)
         print('------------- Classification report -----------------')
         print(cr)
@@ -89,10 +89,10 @@ class TestPlot:
         print('-----------------------------------------------------')
 
     @staticmethod
-    def plot_confusion_matrix(prd_lab: Tuple[np.array, np.array], fig_size: Tuple[float, float] = None):
+    def plot_confusion_matrix(prd_lab: Tuple[np.array, np.array], fig_size: Tuple[float, float] = None, threshold=0.5):
         predictions = prd_lab[0]
         labels = prd_lab[1]
-        predictions = (predictions > 0.5)
+        predictions = (predictions > threshold)
         cm = confusion_matrix(labels, predictions)
         _ = plt.figure(figsize=fig_size)
         plt.clf()
@@ -141,6 +141,23 @@ class TestPlot:
         plt.title('Precision Recall Curve')
         plt.xlabel('Recall')
         plt.ylabel('Precision')
+        plt.legend(loc=1)
+        plt.show()
+
+    def plot_scores(self, scr_lab: Tuple[np.array, np.array], bins: int = None,
+                    fig_size: Tuple[float, float] = None, log_scale=True):
+        style.use(self._def_style)
+        fraud_scores = scr_lab[0][np.where(scr_lab[1] == 1)]
+        n_fraud_scores = scr_lab[0][np.where(scr_lab[1] == 0)]
+        _ = plt.figure(figsize=fig_size)
+        plt.clf()
+        plt.hist(fraud_scores, bins=bins, label=f'Fraud')
+        plt.hist(n_fraud_scores, bins=bins, label=f'Non Fraud', alpha=0.4, stacked=True)
+        plt.title(f'Score Histogram')
+        if log_scale:
+            plt.yscale('log')
+        plt.xlabel('Score')
+        plt.ylabel('#Entries')
         plt.legend(loc=1)
         plt.show()
 

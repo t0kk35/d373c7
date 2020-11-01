@@ -84,7 +84,9 @@ class _Model(nn.Module):
         :param ds: A list of tensors as read from a DataLoader object.
         :return: A list of tensors to be used as input to a neural net.
         """
-        pass
+        raise NotImplemented(
+            f'get_x method not unimplemented in {self.__class__.name}. Children of _Model should implement this method'
+        )
 
     def get_y(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
         """Get the values that are considered the y values. I.e. the dependent variable, I.e. the label
@@ -92,7 +94,9 @@ class _Model(nn.Module):
         :param ds: A list of tensors as read from a DataLoader object.
         :return: A list of tensors to be use as label for the neural net.
         """
-        pass
+        raise NotImplemented(
+            f'get_y method not unimplemented in {self.__class__.name}. Children of _Model should implement this method'
+        )
 
     @property
     def tensor_definition(self):

@@ -7,7 +7,7 @@ import torch
 import torch.utils.data as data
 from .optimizer import _Optimizer
 from .common import _History
-from typing import Dict, List
+from typing import List
 
 
 logger = logging.getLogger(__name__)
@@ -37,22 +37,14 @@ class LRHistory(_History):
     loss_key = 'loss'
 
     def __init__(self, dl: data.DataLoader, scheduler: LinearLR, diverge: int, smooth: float, max_steps: int):
-        _History.__init__(self, dl)
-        self._history = {LRHistory.lr_key: [], LRHistory.loss_key: []}
+        h = {LRHistory.lr_key: [], LRHistory.loss_key: []}
+        _History.__init__(self, dl, h)
         self._step_count = 0
         self._scheduler = scheduler
         self._diverge = diverge
         self._smooth = smooth
         self._max_steps = max_steps
         self._best_loss = float('inf')
-
-    @property
-    def steps(self) -> int:
-        return self._steps
-
-    @property
-    def history(self) -> Dict:
-        return self._history
 
     def end_step(self, o: torch.Tensor, y: List[torch.Tensor], loss: torch.Tensor):
         if self._step_count < 1:

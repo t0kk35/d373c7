@@ -4,8 +4,8 @@ Definition of a set of Numpy Helper classes.
 """
 import logging
 import numpy as np
-from ..features import TensorDefinition
-from typing import List, Tuple
+from ..features import TensorDefinition, LEARNING_CATEGORY_LABEL
+from typing import List, Tuple, Any
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,18 @@ class NumpyList:
             raise NumpyListException(
                 f'The number of validation <{validation}> + the number of test <{test}> records. Is bigger than the ' +
                 f'Length of the Numpy List <{len(npl)}> '
+            )
+
+    @staticmethod
+    def _val_single_label(tensor_def: TensorDefinition):
+        if len(tensor_def.label_features()) < 1:
+            raise NumpyListException(
+                f'TensorDefinition <{tensor_def.name}> should have a label feature'
+            )
+
+        if len(tensor_def.label_features()) > 1:
+            raise NumpyListException(
+                f'TensorDefinition <{tensor_def.name} should only have one label feature>'
             )
 
     def __init__(self, numpy_list: List[np.array]):
@@ -203,14 +215,19 @@ class NumpyList:
             sliced = [sequence for sequence in self._numpy_list]
         return NumpyList(sliced)
 
-    # Function to split various numpy arrays into fraud non_fraud
-    def split_fraud_non_fraud(self, label_index: int) -> Tuple['NumpyList', 'NumpyList']:
-        NumpyList._val_label_has_1_dim(self._numpy_list[label_index])
-        fraud_index = np.where(self._numpy_list[label_index] == 1)
-        non_fraud_index = np.where(self._numpy_list[label_index] == 0)
-        fraud = [sequence[fraud_index] for sequence in self._numpy_list]
-        non_fraud = [sequence[non_fraud_index] for sequence in self._numpy_list]
-        return NumpyList(fraud), NumpyList(non_fraud)
+    def filter_label(self, tensor_def: TensorDefinition, label: Any) -> 'NumpyList':
+        """Method to filter a specific class from the labels. It can for instance be used to filter Fraud or Non-Fraud
+
+        :param tensor_def: The Tensor definition used to build the NumpyList
+        :param label: The label value (class) we want to filter.
+        :return: New filtered numpy list, filtered on the label value
+        """
+        NumpyList.is_built_from(self, tensor_def)
+        NumpyList._val_single_label(tensor_def)
+        label_index = tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        index = np.where(self._numpy_list[label_index] == label)
+        lists = [sequence[index] for sequence in self._numpy_list]
+        return NumpyList(lists)
 
     def concat(self, numpy_list: 'NumpyList') -> 'NumpyList':
         """Function to concatenate 2 numpy_lists. It will concatenate each individual numpy in the list
