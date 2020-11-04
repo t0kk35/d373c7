@@ -60,6 +60,7 @@ class LRHistory(_History):
         raise NotImplemented('end_epoch not implemented for LR-History')
 
     def early_break(self) -> bool:
-        loss_diverged = True if self._history[LRHistory.loss_key][-1] > self._best_loss * self._diverge else False
+        loss_diverged = True if len(self._history[LRHistory.loss_key]) > 0 \
+                                and self._history[LRHistory.loss_key][-1] > self._best_loss * self._diverge else False
         max_iter_reached = True if self._step_count >= self._max_steps else False
         return loss_diverged or max_iter_reached

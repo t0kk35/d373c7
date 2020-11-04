@@ -171,6 +171,7 @@ class TestCreation(unittest.TestCase):
             _ = n1.concat(n2).lists
 
     # TODO add tests for split
+    # TODO add tests for filter
 
 
 def main():
