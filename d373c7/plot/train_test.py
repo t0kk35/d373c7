@@ -8,6 +8,7 @@ from matplotlib import style
 from sklearn.metrics import confusion_matrix, classification_report, roc_curve, roc_auc_score, average_precision_score
 from sklearn.metrics import precision_recall_curve
 from sklearn.decomposition import PCA
+from .common import Metrics
 # noinspection PyProtectedMember
 from ..pytorch.common import _History
 from ..features.base import FeatureIndex
@@ -158,6 +159,23 @@ class TestPlot:
             plt.yscale('log')
         plt.xlabel('Score')
         plt.ylabel('#Entries')
+        plt.legend(loc=1)
+        plt.show()
+
+    def plot_score_metrics(self, scr_lab: Tuple[np.array, np.array], bins=20, fig_size: Tuple[float, float] = None):
+        style.use(self._def_style)
+        scores = scr_lab[0]
+        labels = scr_lab[1]
+        ths = np.linspace(scores.min(), scores.max(), bins)
+        m = Metrics()
+        y = np.array([m.score_metrics(scores, labels, t) for t in ths])
+        _ = plt.figure(figsize=fig_size)
+        plt.clf()
+        for i, n in enumerate(m.score_metrics_names()):
+            plt.plot(ths, y[:, i], markersize=5, marker='o', label=f'{n}')
+        plt.title('Metrics per Threshold')
+        plt.xlabel('Threshold')
+        plt.ylabel('Metric')
         plt.legend(loc=1)
         plt.show()
 

@@ -2,8 +2,11 @@
 Common classes for all Pytorch Models
 (c) 2020 d373c7
 """
+import logging
 import torch.nn as nn
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class PyTorchLayerException(Exception):
