@@ -293,6 +293,74 @@ class TestIndex(unittest.TestCase):
             self.assertEqual(df[ind_name][0], 0, f'Missing row should have been default {df[ind_name][0]}')
 
 
+class TestFeatureBin(unittest.TestCase):
+    def test_read_base_non_inference(self):
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
+        bin_name = 'Amount_bin'
+        nr_bins = 3
+        fb = ft.FeatureBin(bin_name, ft.FEATURE_TYPE_INT_16, fa, nr_bins)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            td = ft.TensorDefinition('All', [fa])
+            df = e.from_csv(td, file, inference=False)
+            mx = df['Amount'].max()
+            mn = df['Amount'].min()
+            md = df['Amount'].mean()
+            td2 = ft.TensorDefinition('Derived', [fb])
+            df = e.from_df(td2, df, inference=False)
+            self.assertEqual(len(df.columns), 1, f'Should have gotten one column. Got {len(df.columns)}')
+            self.assertEqual(df.columns[0], bin_name, f'Column name incorrect. Got {df.columns[0]}')
+            self.assertEqual(fb.inference_ready, True, f'Index feature should be ready for inference')
+            self.assertEqual(fb.bins, [mn, md, mx], f'Bins not set as expected. Got {fb.bins}')
+            self.assertEqual(td.rank, 2, f'This should have been a rank 2 tensor. Got {td.rank}')
+            self.assertListEqual(td2.categorical_features(), [fb], f'Expanded Feature not correct')
+            self.assertEqual(sorted(list(df[bin_name].unique())), list(range(0, fb.number_of_bins)))
+
+    def test_read_remove_element(self):
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
+        bin_name = 'Amount_bin'
+        nr_bins = 3
+        fb = ft.FeatureBin(bin_name, ft.FEATURE_TYPE_INT_16, fa, nr_bins)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(ft.TensorDefinition('All', [fa]), file, inference=False)
+            td = ft.TensorDefinition('Derived', [fb])
+            _ = e.from_df(td, df, inference=False)
+            mx = df['Amount'].max()
+            mn = df['Amount'].min()
+            md = df['Amount'].mean()
+            # Now remove a line and run in inference mode
+            df = df.iloc[1:]
+            df_2 = e.from_df(td, df, inference=True)
+            bin_v = df_2[bin_name].unique()
+            # Should not have a 0 bin. As we removed the 0.0 amount
+            self.assertNotIn(0, bin_v, f'Should not have had a 0 value')
+            self.assertEqual(fb.bins, [mn, md, mx], f'Bins probably changed. Got {fb.bins}')
+            self.assertEqual(len(bin_v), fb.number_of_bins - 1, f'Not missing a value. Got len{len(bin_v)}')
+            self.assertEqual(td.inference_ready, True, f'Tensor should still be ready for inference')
+
+    def test_read_add_element(self):
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
+        bin_name = 'Amount_bin'
+        nr_bins = 3
+        fb = ft.FeatureBin(bin_name, ft.FEATURE_TYPE_INT_16, fa, nr_bins)
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        with en.EnginePandasNumpy() as e:
+            df_c = e.from_csv(ft.TensorDefinition('All', [fa]), file, inference=False)
+            # Remove first and last row and set variables.
+            df_r = df_c.iloc[1:-1].copy()
+            # Run non-inference on removed panda
+            td = ft.TensorDefinition('Derived', [fb])
+            df_n = e.from_df(td, df_r, inference=False)
+            bin_v = df_n[bin_name].unique()
+            # And inference on original
+            df = e.from_df(td, df_c, inference=True)
+            self.assertEqual(fb.number_of_bins, len(bin_v), f'Number of bins changed {fb.number_of_bins}')
+            self.assertEqual(td.inference_ready, True, f'Tensor should still be ready for inference')
+            self.assertEqual(df[bin_name][0], 0, f'Missing row should have been in 0 bin {df[bin_name][0]}')
+            self.assertEqual(df[bin_name].iloc[-1], nr_bins, f'Last should have max bin {df[bin_name].iloc[-1]}')
+
+
 class TestReshape(unittest.TestCase):
     """Reshaping Tests
     """

@@ -206,7 +206,21 @@ class FeatureBin(FeatureInferenceAttributes):
     class ScaleTypeGeometric(ScaleType):
         pass
 
+    def _val_int_type(self, f_type: FeatureType):
+        if not isinstance(f_type, FeatureTypeInteger):
+            raise FeatureDefinitionException(
+                f'The FeatureType of a {self.__class__.name} must be integer based. Got <{f_type}>'
+            )
+
+    def _val_base_float(self, feature: Feature):
+        if not isinstance(feature.type, FeatureTypeFloat):
+            raise FeatureDefinitionException(
+                f'Base feature of a {self.__class__.name} must be a float type. Got <{feature.type}>'
+            )
+
     def __init__(self, name: str, f_type: FeatureType, base_feature: Feature, nr_bins: int, scale_type: str = 'linear'):
+        self._val_int_type(f_type)
+        self._val_base_float(base_feature)
         Feature.__init__(self, name, f_type)
         self._base_feature = base_feature
         self._nr_bins = nr_bins
@@ -222,7 +236,8 @@ class FeatureBin(FeatureInferenceAttributes):
     def __eq__(self, other):
         if isinstance(other, self.__class__):
             return self.name == other.name and \
-                   self.type == other.type
+                   self.type == other.type and \
+                   self.base_feature == other.base_feature
         else:
             return False
 

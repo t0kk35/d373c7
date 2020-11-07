@@ -16,7 +16,7 @@ class _LossBase:
         self._score_loss = torch.nn.BCELoss(reduction='none')
         self._aggregator = torch.sum if reduction == 'sum' else torch.mean
 
-    def __call__(self, *args, **kwargs) -> List[torch.Tensor]:
+    def __call__(self, *args, **kwargs) -> torch.Tensor:
         raise NotImplemented('Call not implemented for loss function')
 
     def score(self, *args, **kwargs) -> torch.Tensor:
@@ -39,7 +39,7 @@ class SingleLabelBCELoss(_LossBase):
     def __init__(self, reduction='mean'):
         _LossBase.__init__(self, nn.BCELoss, reduction)
 
-    def __call__(self, *args, **kwargs) -> List[torch.Tensor]:
+    def __call__(self, *args, **kwargs) -> torch.Tensor:
         pr = torch.squeeze(args[0])
         lb = torch.squeeze(args[1][0])
         loss = self.train_loss(pr, lb)

@@ -116,7 +116,7 @@ class EnginePandasNumpy(EngineContext):
         :param features: List of feature to check.
         :return: None
         """
-        root_features = (f for f in features if len(f.embedded_features) == 0)
+        root_features = [f for f in features if len(f.embedded_features) == 0]
         unknown_features = [f for f in root_features if f.name not in df.columns]
         if len(unknown_features) != 0:
             raise EnginePandaNumpyException(
@@ -183,7 +183,7 @@ class EnginePandasNumpy(EngineContext):
         logger.info(f'Building Panda for : <{tensor_def.name}> from DataFrame. Inference mode <{inference}>')
         self._val_ready_for_inference(tensor_def, inference)
         all_features = tensor_def.features
-        self._val_features_defined_as_columns(df, all_features)
+        self._val_features_defined_as_columns(df, tensor_def.embedded_features)
 
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
         normalizer_features = [field for field in all_features if isinstance(field, FeatureNormalize)]
@@ -246,7 +246,7 @@ class EnginePandasNumpy(EngineContext):
         if not file_instance.exists():
             raise EnginePandaNumpyException(f' path {file} does not exist or is not a file')
         logger.info(f'Building Panda for : {tensor_def.name} from file {file}')
-        all_features = tensor_def.embedded_features
+        all_features = tensor_def.features
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
         source_feature_names = [field.name for field in source_features]
         source_feature_types = {feature.name: EnginePandasNumpy.panda_type(feature) for feature in source_features}
