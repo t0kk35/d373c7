@@ -36,12 +36,6 @@ class VAELatentToLinear(_Layer):
         s = torch.exp(0.5*s)
         eps = torch.randn_like(s)
         return mu + eps * s
-        # if self.training:
-        #     s = s.mul(0.5).exp_()
-        #     eps = torch.empty_like(s).normal_()
-        #     return eps.mul(s).add_(mu)
-        # else:
-        #     return mu
 
     def extra_repr(self) -> str:
         return f're-parameterization layer'

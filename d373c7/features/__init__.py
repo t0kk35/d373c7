@@ -8,7 +8,7 @@ from .common import FEATURE_TYPE_FLOAT_64, FEATURE_TYPE_INT_32, FEATURE_TYPE_INT
 from .common import FEATURE_TYPE_STRING
 from .common import LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_CONTINUOUS
 from .common import LEARNING_CATEGORY_NONE, LEARNING_CATEGORY_LABEL
-from .common import FeatureDefinitionException
+from .common import FeatureDefinitionException, FeatureCategorical, Feature
 from .base import FeatureSource, FeatureVirtual, FeatureIndex, FeatureBin
 from .expanders import FeatureOneHot
 from .labels import FeatureLabelBinary

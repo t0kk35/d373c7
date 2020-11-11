@@ -4,7 +4,7 @@ Definition of some fairly straight forward Features
 """
 import logging
 from typing import List
-from ..features.common import Feature, FeatureType, FeatureDefinitionException, FeatureInferenceAttributes
+from ..features.common import Feature, FeatureType, FeatureDefinitionException, FeatureCategorical
 from ..features.common import LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_NONE, LEARNING_CATEGORY_CONTINUOUS
 from ..features.common import FeatureTypeString, FeatureTypeInteger, FeatureTypeFloat, LearningCategory
 
@@ -112,7 +112,7 @@ class FeatureVirtual(Feature):
         return []
 
 
-class FeatureIndex(FeatureInferenceAttributes):
+class FeatureIndex(FeatureCategorical):
     """Indexer feature. It will turn a specific input field (the base_feature) into an index. For instance 'DE'->1,
     'FR'->2, 'GB'->3 etc... The index will have an integer type and is ideal to model in embeddings.
 
@@ -186,7 +186,7 @@ class FeatureIndex(FeatureInferenceAttributes):
         return self._dict is not None
 
 
-class FeatureBin(FeatureInferenceAttributes):
+class FeatureBin(FeatureCategorical):
     """Feature that will 'bin' a float number. Binning means the float feature will be turned into an int/categorical
     variable. For instance values 0.0 till 0.85 will be bin 1, from 0.85 till 1.7 bin 2 etc...
 

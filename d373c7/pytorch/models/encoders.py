@@ -9,10 +9,11 @@ from .common import _Model, _TensorHeadModel, ModelDefaults, PyTorchModelExcepti
 from ..common import _History
 from ..layers import LinDropAct, BinaryOutput
 from ..layers.variational import VAELinearToLatent, VAELatentToLinear
+from ..layers.output import CategoricalLogSoftmax1d
 from ..optimizer import _Optimizer, AdamWOptimizer
-from ..loss import _LossBase, SingleLabelBCELoss, BinaryVAELoss
-from ...features import TensorDefinition, LEARNING_CATEGORY_LABEL, LEARNING_CATEGORY_BINARY
-from ...features import LEARNING_CATEGORY_CATEGORICAL
+from ..loss import _LossBase, SingleLabelBCELoss, BinaryVAELoss, MultiLabelNLLLoss, MultiLabelBCELoss
+from ...features import TensorDefinition, FeatureCategorical, LEARNING_CATEGORY_LABEL, LEARNING_CATEGORY_BINARY
+from ...features import FeatureIndex, LEARNING_CATEGORY_CATEGORICAL
 from typing import List, Any
 
 logger = logging.getLogger(__name__)
@@ -94,11 +95,15 @@ class AutoEncoderDefaults(ModelDefaults):
         super(AutoEncoderDefaults, self).__init__()
         self.emb_dim(4, 100, 0.2)
         self.set('lin_interlayer_drop_out', 0.1)
+        self.set('vae_loss_kl_weight', 1.0)
 
     def emb_dim(self, minimum: int, maximum: int, dropout: float):
         self.set('emb_min_dim', minimum)
         self.set('emb_max_dim', maximum)
         self.set('emb_dropout', dropout)
+
+    def set_vae_kl_weight(self, weight: float):
+        self.set('vae_loss_kl_weight', 1.0)
 
 
 class _LinearEncoder(_TensorHeadModel):
@@ -114,9 +119,9 @@ class _LinearEncoder(_TensorHeadModel):
         return x
 
 
-class _LatentLinearEncoder(_LinearEncoder):
+class LatentLinearEncoder(_LinearEncoder):
     def __init__(self, tensor_def: TensorDefinition, latent_dim: int, layers: List[int], defaults: ModelDefaults):
-        super(_LatentLinearEncoder, self).__init__(tensor_def, layers, defaults)
+        super(LatentLinearEncoder, self).__init__(tensor_def, layers, defaults)
         self.latent = nn.Linear(self.linear.output_size, latent_dim)
 
     def forward(self, x):
@@ -125,9 +130,9 @@ class _LatentLinearEncoder(_LinearEncoder):
         return x
 
 
-class _LatentVAEEncoder(_LinearEncoder):
+class LatentVAEEncoder(_LinearEncoder):
     def __init__(self, tensor_def: TensorDefinition, latent_dim: int, layers: List[int], defaults: ModelDefaults):
-        super(_LatentVAEEncoder, self).__init__(tensor_def, layers, defaults)
+        super(LatentVAEEncoder, self).__init__(tensor_def, layers, defaults)
         self.latent = VAELinearToLatent(self.linear.output_size, latent_dim)
 
     def forward(self, x):
@@ -141,12 +146,12 @@ class _LinearDecoder(nn.Module):
         raise NotImplemented(f'_forward_unimplemented not implemented in {self.__class__.__name__}')
 
 
-class _LatentLinearDecoder(_LinearDecoder):
+class LatentLinearDecoder(_LinearDecoder):
     def _forward_unimplemented(self, *inp: Any) -> None:
         raise NotImplemented(f'_forward_unimplemented not implemented in {self.__class__.__name__}')
 
     def __init__(self, latent_dim, layers: List[int], defaults: ModelDefaults):
-        super(_LatentLinearDecoder, self).__init__()
+        super(LatentLinearDecoder, self).__init__()
         self._out_size = layers[-1]
         do = defaults.get_float('lin_interlayer_drop_out')
         ly = [(i, do) for i in layers]
@@ -161,18 +166,18 @@ class _LatentLinearDecoder(_LinearDecoder):
         return x
 
 
-class _LatentVAEDecoder(_LatentLinearDecoder):
+class LatentVAEDecoder(LatentLinearDecoder):
     def _forward_unimplemented(self, *inp: Any) -> None:
         raise NotImplemented(f'_forward_unimplemented not implemented in {self.__class__.__name__}')
 
     def __init__(self, latent_dim, layers: List[int], defaults: ModelDefaults):
-        super(_LatentVAEDecoder, self).__init__(latent_dim, layers, defaults)
+        super(LatentVAEDecoder, self).__init__(latent_dim, layers, defaults)
         self.to_linear = VAELatentToLinear()
 
     def forward(self, x):
         mu, s = x
         x = self.to_linear(mu, s)
-        x = _LatentLinearDecoder.forward(self, x)
+        x = LatentLinearDecoder.forward(self, x)
         return x
 
     @property
@@ -195,7 +200,7 @@ class _LinearAutoEncoder(_AutoEncoderModel):
         return self._loss_fn
 
 
-class LinearToBinaryAutoEncoder(_LinearAutoEncoder):
+class BinaryToBinaryAutoEncoder(_LinearAutoEncoder):
     """Auto-encoder which will only take binary input, (not categorical or continuous features) and will return binary
     output. The encoder will use linear layers to condense until it reaches the latent dim size. The decoder will start
     from the latent feature and reconstruct until is reaches the original input size.
@@ -211,9 +216,9 @@ class LinearToBinaryAutoEncoder(_LinearAutoEncoder):
     """
     def __init__(self, tensor_def: TensorDefinition, latent_dim: int, layers: List[int],
                  defaults=AutoEncoderDefaults()):
-        encoder = _LatentLinearEncoder(tensor_def, latent_dim, [16], defaults)
-        decoder = _LatentLinearDecoder(latent_dim, [16], defaults)
-        super(LinearToBinaryAutoEncoder, self).__init__(encoder, decoder, SingleLabelBCELoss())
+        encoder = LatentLinearEncoder(tensor_def, latent_dim, [16], defaults)
+        decoder = LatentLinearDecoder(latent_dim, [16], defaults)
+        super(BinaryToBinaryAutoEncoder, self).__init__(encoder, decoder, SingleLabelBCELoss())
         self._val_layers(layers)
         self._val_only_bin(tensor_def)
         self._input_size = len(tensor_def.filter_features(LEARNING_CATEGORY_BINARY, True))
@@ -224,6 +229,40 @@ class LinearToBinaryAutoEncoder(_LinearAutoEncoder):
         x = self.decoder(x)
         x = self.out(x)
         return x
+
+
+class CategoricalToBinaryAutoEncoder(_LinearAutoEncoder):
+    """Auto-encoder which will only take binary input, (not categorical or continuous features) and will return binary
+    output. The encoder will use linear layers to condense until it reaches the latent dim size. The decoder will start
+    from the latent feature and reconstruct until is reaches the original input size.
+    It will use BinaryCrossEntropy loss.
+
+    Args:
+        tensor_def: The Tensor Definition that will be used
+        latent_dim : The size of the latent dimension. As integer value
+        layers: A list of integers. Drives the number of layers and their size. For instance [64,32,16] would create a
+        neural net with 3 layers of size 64, 32 and 16 respectively. Note that the NN will also have an additional
+        input layer (depends on the tensor_def) and an output layer.
+        defaults: Optional defaults object. If omitted, the AutoEncoderDefaults will be used.
+    """
+    def __init__(self, tensor_def: TensorDefinition, latent_dim: int, layers: List[int],
+                 defaults=AutoEncoderDefaults()):
+        encoder = LatentLinearEncoder(tensor_def, latent_dim, [16], defaults)
+        decoder = LatentLinearDecoder(latent_dim, [16], defaults)
+        super(CategoricalToBinaryAutoEncoder, self).__init__(encoder, decoder, MultiLabelBCELoss(tensor_def))
+        self._val_layers(layers)
+        self._val_only_cat(tensor_def)
+        out_size = sum([len(f) + 1 for f in tensor_def.categorical_features() if isinstance(f, FeatureCategorical)])
+        self.out = BinaryOutput(self.decoder.output_size, out_size)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        x = self.out(x)
+        return x
+
+    def embedding_weights(self, feature: FeatureIndex) -> torch.Tensor:
+        return self.encoder.embedding_weights(feature)
 
 
 class LinearToCategoryAutoEncoder(_LinearAutoEncoder):
@@ -240,18 +279,22 @@ class LinearToCategoryAutoEncoder(_LinearAutoEncoder):
     """
     def __init__(self, tensor_def: TensorDefinition, latent_dim: int, layers: List[int],
                  defaults=AutoEncoderDefaults()):
-        super(LinearToCategoryAutoEncoder, self).__init__(tensor_def, latent_dim, defaults)
+        encoder = LatentLinearEncoder(tensor_def, latent_dim, [16], defaults)
+        decoder = LatentLinearDecoder(latent_dim, [16], defaults)
+        super(LinearToCategoryAutoEncoder, self).__init__(encoder, decoder, MultiLabelNLLLoss())
         self._val_layers(layers)
         self._val_only_cat(tensor_def)
         self._input_size = len(tensor_def.filter_features(LEARNING_CATEGORY_CATEGORICAL))
+        self.out = CategoricalLogSoftmax1d(tensor_def, decoder.output_size, True)
 
     def forward(self, x):
         x = self.encoder(x)
         x = self.decoder(x)
+        x = self.out(x)
         return x
 
 
-class LinearToBinaryVariationalAutoEncoder(_LinearAutoEncoder):
+class BinaryToBinaryVariationalAutoEncoder(_LinearAutoEncoder):
     """Variational Auto-Encoder which will only take binary variables as input. (not categorical or continuous features)
     and will return binary output
 
@@ -265,9 +308,10 @@ class LinearToBinaryVariationalAutoEncoder(_LinearAutoEncoder):
     """
     def __init__(self, tensor_def: TensorDefinition, latent_dim: int, layers: List[int],
                  defaults=AutoEncoderDefaults()):
-        encoder = _LatentVAEEncoder(tensor_def, latent_dim, layers, defaults)
-        decoder = _LatentVAEDecoder(latent_dim, layers, defaults)
-        super(LinearToBinaryVariationalAutoEncoder, self).__init__(encoder, decoder, BinaryVAELoss())
+        encoder = LatentVAEEncoder(tensor_def, latent_dim, layers, defaults)
+        decoder = LatentVAEDecoder(latent_dim, layers, defaults)
+        kl_weight = defaults.get_float('vae_loss_kl_weight')
+        super(BinaryToBinaryVariationalAutoEncoder, self).__init__(encoder, decoder, BinaryVAELoss(kl_weight=kl_weight))
         self._val_layers(layers)
         self._val_only_bin(tensor_def)
         self._input_size = len(tensor_def.filter_features(LEARNING_CATEGORY_BINARY, True))

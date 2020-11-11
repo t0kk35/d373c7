@@ -4,8 +4,8 @@ Tensor Definition classes. For grouping features.
 """
 from .common import LearningCategory, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_LABEL
 from .common import LEARNING_CATEGORY_CONTINUOUS
-from .common import FeatureTypeNumerical
-from .base import Feature, FeatureIndex, FeatureInferenceAttributes
+from .common import FeatureTypeNumerical, FeatureInferenceAttributes
+from .base import Feature, FeatureIndex
 from .expanders import FeatureOneHot, FeatureExpander
 from typing import List
 

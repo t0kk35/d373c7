@@ -183,3 +183,15 @@ class FeatureInferenceAttributes(Feature):
         :return: True is the feature is ready for inference
         """
         return not_implemented(self)
+
+
+class FeatureCategorical(FeatureInferenceAttributes):
+    """Place holder for features that are categorical in nature. They implement an additional __len__ method which
+    will be used in embedding layers.
+    """
+    def __len__(self):
+        """Return the cardinality of the categorical feature.
+
+        :return: Integer value, the cardinality of the categorical feature.
+        """
+        return not_implemented(self)
