@@ -4,5 +4,4 @@ Imports for Pytorch custom models
 """
 from .classifiers import FeedForwardFraudClassifier, ClassifierDefaults
 from .encoders import AutoEncoderDefaults, BinaryToBinaryAutoEncoder, BinaryToBinaryVariationalAutoEncoder
-from .encoders import CategoricalToBinaryAutoEncoder
-from .encoders import LinearToCategoryAutoEncoder
+from .encoders import CategoricalToBinaryAutoEncoder, CategoricalToCategoricalAutoEncoder

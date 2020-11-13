@@ -13,4 +13,5 @@ from .base import FeatureSource, FeatureVirtual, FeatureIndex, FeatureBin
 from .expanders import FeatureOneHot
 from .labels import FeatureLabelBinary
 from .normalizers import FeatureNormalizeScale, FeatureNormalizeStandard
+from .expressions import FeatureExpression
 from .tensor import TensorDefinition, TensorDefinitionException

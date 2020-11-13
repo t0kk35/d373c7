@@ -9,7 +9,7 @@ from .common import _Model, _TensorHeadModel, ModelDefaults, PyTorchModelExcepti
 from ..common import _History
 from ..layers import LinDropAct, BinaryOutput
 from ..layers.variational import VAELinearToLatent, VAELatentToLinear
-from ..layers.output import CategoricalLogSoftmax1d
+from ..layers.output import CategoricalLogSoftmax1d, CategoricalLogSoftmax1dV2
 from ..optimizer import _Optimizer, AdamWOptimizer
 from ..loss import _LossBase, SingleLabelBCELoss, BinaryVAELoss, MultiLabelNLLLoss, MultiLabelBCELoss
 from ...features import TensorDefinition, FeatureCategorical, LEARNING_CATEGORY_LABEL, LEARNING_CATEGORY_BINARY
@@ -261,11 +261,11 @@ class CategoricalToBinaryAutoEncoder(_LinearAutoEncoder):
         x = self.out(x)
         return x
 
-    def embedding_weights(self, feature: FeatureIndex) -> torch.Tensor:
-        return self.encoder.embedding_weights(feature)
+    def embedding_weights(self, feature: FeatureIndex, as_numpy=True) -> torch.Tensor:
+        return self.encoder.embedding_weights(feature, as_numpy)
 
 
-class LinearToCategoryAutoEncoder(_LinearAutoEncoder):
+class CategoricalToCategoricalAutoEncoder(_LinearAutoEncoder):
     """Auto-encoder which will only take categorical variables as input. (not binary or continuous features)
     and will return categorical output
 
@@ -281,17 +281,20 @@ class LinearToCategoryAutoEncoder(_LinearAutoEncoder):
                  defaults=AutoEncoderDefaults()):
         encoder = LatentLinearEncoder(tensor_def, latent_dim, [16], defaults)
         decoder = LatentLinearDecoder(latent_dim, [16], defaults)
-        super(LinearToCategoryAutoEncoder, self).__init__(encoder, decoder, MultiLabelNLLLoss())
+        super(CategoricalToCategoricalAutoEncoder, self).__init__(encoder, decoder, MultiLabelNLLLoss())
         self._val_layers(layers)
         self._val_only_cat(tensor_def)
         self._input_size = len(tensor_def.filter_features(LEARNING_CATEGORY_CATEGORICAL))
-        self.out = CategoricalLogSoftmax1d(tensor_def, decoder.output_size, True)
+        self.out = CategoricalLogSoftmax1d(tensor_def, decoder.output_size, False)
 
     def forward(self, x):
         x = self.encoder(x)
         x = self.decoder(x)
         x = self.out(x)
         return x
+
+    def embedding_weights(self, feature: FeatureIndex, as_numpy=True) -> torch.Tensor:
+        return self.encoder.embedding_weights(feature, as_numpy)
 
 
 class BinaryToBinaryVariationalAutoEncoder(_LinearAutoEncoder):

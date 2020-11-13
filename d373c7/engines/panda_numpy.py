@@ -18,6 +18,7 @@ from ..features.base import FeatureSource, FeatureIndex, FeatureBin
 from ..features.tensor import TensorDefinition
 from ..features.expanders import FeatureExpander, FeatureOneHot
 from ..features.normalizers import FeatureNormalize, FeatureNormalizeScale, FeatureNormalizeStandard
+from ..features.expressions import FeatureExpression
 from ..features.labels import FeatureLabel, FeatureLabelBinary
 
 logger = logging.getLogger(__name__)
@@ -458,4 +459,13 @@ class _FeatureProcessor:
             labels = np.array(feature.range).astype(np.dtype(t))
             cut = pd.cut(df[feature.base_feature.name], bins=bins, labels=labels)
             df[feature.name] = cut.cat.add_categories(0).fillna(0)
+        return df
+
+    @staticmethod
+    def process_expr_features(df: pd.DataFrame, features: List[FeatureExpression]) -> pd.DataFrame:
+        # Add the expression fields
+        for feature in features:
+            t = np.dtype(EnginePandasNumpy.panda_type(feature))
+            # TODO this might not work for multiple parameters
+            df[feature.name] = df[feature.param_features[0].name].map(feature.expression).astype(t)
         return df

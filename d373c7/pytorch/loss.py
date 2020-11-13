@@ -69,7 +69,7 @@ class MultiLabelBCELoss(_LossBase):
         pr = torch.squeeze(args[0])
         lb = [nn.functional.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
         lb = torch.cat(lb, dim=1)
-        score = self.score_loss(lb, pr)
+        score = self.score_loss(pr, lb)
         score = self.score_aggregator(score, dim=1)
         return score
 

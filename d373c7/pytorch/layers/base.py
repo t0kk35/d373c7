@@ -6,8 +6,7 @@ import torch
 import torch.nn as nn
 from .common import _Layer, PyTorchLayerException
 from ...features.tensor import TensorDefinition
-from ...features.base import FeatureIndex
-from ...features.common import LEARNING_CATEGORY_BINARY
+from ...features.common import LEARNING_CATEGORY_BINARY, FeatureCategorical
 from ...features import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL
 from typing import List, Tuple
 
@@ -56,10 +55,10 @@ class Embedding(_Layer):
     :argument min_dims: The minimum dimension of an embedding.
     :argument max_dims: The maximum dimension of an embedding.
     """
-    def _val_feature_in_embedding(self, feature: FeatureIndex):
-        if not isinstance(feature, FeatureIndex):
+    def _val_feature_in_embedding(self, feature: FeatureCategorical):
+        if not isinstance(feature, FeatureCategorical):
             raise PyTorchLayerException(
-                f'Feature <{feature.name}> is not of type {FeatureIndex.__class__}. Embedding only work with ' +
+                f'Feature <{feature.name}> is not of type {FeatureCategorical.__class__}. Embedding only work with ' +
                 f'Index Features'
             )
         if feature not in self._i_features:
@@ -70,7 +69,7 @@ class Embedding(_Layer):
 
     def __init__(self, tensor_def: TensorDefinition, dropout: float, min_dims: int, max_dims: int):
         super(Embedding, self).__init__()
-        self._i_features = [f for f in tensor_def.categorical_features() if isinstance(f, FeatureIndex)]
+        self._i_features = [f for f in tensor_def.categorical_features() if isinstance(f, FeatureCategorical)]
         emb_dim = [(len(f)+1, min(max(int(len(f)/2), min_dims), max_dims)) for f in self._i_features]
         self._out_size = sum([y for _, y in emb_dim])
         self.embeddings = nn.ModuleList([nn.Embedding(x, y) for x, y in emb_dim])
@@ -91,7 +90,7 @@ class Embedding(_Layer):
         x = self.dropout(x)
         return x
 
-    def embedding_weight(self, feature: FeatureIndex) -> torch.Tensor:
+    def embedding_weight(self, feature: FeatureCategorical) -> torch.Tensor:
         self._val_feature_in_embedding(feature)
         i = self._i_features.index(feature)
         w = self.embeddings[i].weight
@@ -196,5 +195,5 @@ class TensorDefinitionHead(_Layer):
         x = torch.cat(cat_list, dim=1)
         return x
 
-    def embedding_weight(self, feature: FeatureIndex) -> torch.Tensor:
+    def embedding_weight(self, feature: FeatureCategorical) -> torch.Tensor:
         return self.embedding.embedding_weight(feature)
