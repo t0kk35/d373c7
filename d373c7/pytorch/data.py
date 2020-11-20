@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Sampler
 from ..features.common import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL
 from ..features.common import LEARNING_CATEGORY_LABEL
-from ..features.tensor import TensorDefinition
+from ..features.tensor import TensorDefinition, TensorDefinitionMulti
 from ..engines import NumpyList
 from .common import PyTorchTrainException
 from typing import List
@@ -38,15 +38,7 @@ class _DTypeHelper:
         return dtypes
 
 
-class NumpyListDataSet(Dataset):
-    """Custom PyTorch 'Dataset' for numpy lists. The idea is that the data is kept in original numpy. Normally in the
-    most condensed form. The numpy arrays are converted to Pytorch tensors on the fly, as each row is requested. This
-    create a bit of CPU overhead, but as the numpy arrays should be more condensed, (the PyTorch tensors are mainly
-    float32 and long), it should allow keeping more data in memory.
-
-    :argument tensor_def: The tensor definition off of which the numpy list was created.
-    :argument npl: The numpy list to use as base for the Pytorch Dataset.
-    """
+class _BaseNumpyListDataSet(Dataset):
     @staticmethod
     def _val_built_from(npl: NumpyList, tensor_definition: TensorDefinition):
         if not npl.is_built_from(tensor_definition):
@@ -54,13 +46,12 @@ class NumpyListDataSet(Dataset):
                 f'The NumpyList does not seem to be built from the given TensorDefinition'
             )
 
-    def __init__(self, tensor_def: TensorDefinition, npl: NumpyList):
-        NumpyListDataSet._val_built_from(npl, tensor_def)
+    def __init__(self, npl: NumpyList, dtypes, names: List[str]):
         self._npl = npl
-        self._tensor_def = tensor_def
-        self._dtypes = _DTypeHelper.get_dtypes(tensor_def)
+        self._dtypes = dtypes
         # Yes assign to CPU. We could directly allocate to the GPU, but then we can only use one worker :|
         self.device = torch.device('cpu')
+        self.names = names
 
     def __len__(self):
         return len(self._npl)
@@ -86,7 +77,7 @@ class NumpyListDataSet(Dataset):
         # Cuda does not support multiple workers. Override if GPU
         if num_workers > 1:
             if self.device.type == 'cuda':
-                logger.warning(f'Defaulted to using the cpu for the data-loader of <{self._tensor_def.name}>.' +
+                logger.warning(f'Defaulted to using the cpu for the data-loader of <{self.names}>.' +
                                f' Multiple workers not supported by "cuda" devices. ')
             self.device = torch.device('cpu')
             dl = DataLoader(
@@ -100,11 +91,53 @@ class NumpyListDataSet(Dataset):
         return dl
 
 
+class NumpyListDataSet(_BaseNumpyListDataSet):
+    """Custom PyTorch 'Dataset' for numpy lists. The idea is that the data is kept in original numpy. Normally in the
+    most condensed form. The numpy arrays are converted to Pytorch tensors on the fly, as each row is requested. This
+    create a bit of CPU overhead, but as the numpy arrays should be more condensed, (the PyTorch tensors are mainly
+    float32 and long), it should allow keeping more data in memory.
+
+    Args:
+        tensor_def: The tensor definition off of which the numpy list was created.
+        npl: The numpy list to use as base for the Pytorch Dataset.
+    """
+    def __init__(self, tensor_def: TensorDefinition, npl: NumpyList):
+        NumpyListDataSet._val_built_from(npl, tensor_def)
+        dtypes = _DTypeHelper.get_dtypes(tensor_def)
+        super(NumpyListDataSet, self).__init__(npl, dtypes, [tensor_def.name])
+
+
+class NumpyListDataSetMulti(_BaseNumpyListDataSet):
+    """Custom PyTorch 'Dataset' for numpy lists. The idea is that the data is kept in original numpy. Normally in the
+    most condensed form. The numpy arrays are converted to Pytorch tensors on the fly, as each row is requested. This
+    create a bit of CPU overhead, but as the numpy arrays should be more condensed, (the PyTorch tensors are mainly
+    float32 and long), it should allow keeping more data in memory.
+    This version has multi-head support. It has a list of TensorDefinitions as input.
+
+    Args:
+        tensor_def: The list of tensor definitions off of which the numpy list was created.
+        npl: The numpy list to use as base for the Pytorch Dataset.
+    """
+    def __init__(self, tensor_def: TensorDefinitionMulti, npl: NumpyList):
+        dtypes = [tp for td in tensor_def.tensor_definitions for tp in _DTypeHelper.get_dtypes(td)]
+        names = [td.name for td in tensor_def.tensor_definitions]
+        super(NumpyListDataSetMulti, self).__init__(npl, dtypes, names)
+
+    @staticmethod
+    def label_index(tensor_def: TensorDefinitionMulti) -> int:
+        lcs = [0] + [len(td.learning_categories) for td in tensor_def.tensor_definitions]
+        ltd = tensor_def.label_tensor_definition
+        lti = tensor_def.tensor_definitions.index(ltd)
+        i = lcs[lti] + ltd.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        return i
+
+
 class ClassSampler:
     """ Class for creating a sampler.
 
-    :argument npl: The Numpy List to sample.
-    :argument tensor_definition: The Tensor definition used to create the numpy List
+    Args:
+         npl: The Numpy List to sample.
+         tensor_definition: The Tensor definition used to create the numpy List
     """
     @staticmethod
     def _val_built_from(npl: NumpyList, tensor_definition: TensorDefinition):
@@ -135,3 +168,17 @@ class ClassSampler:
             replacement=replacement
         )
         return train_sampler
+
+
+class ClassSamplerMulti(ClassSampler):
+    """ Class for creating a sampler.
+
+    Args:
+         tensor_definitions: The TensorDefinitionMultiHead used to create the numpy List
+         npl: The Numpy List to sample.
+    """
+    def __init__(self, tensor_definitions: TensorDefinitionMulti, npl: NumpyList):
+        # Create Sampler using the list that has the labels, filter out the list of numpy of that specific tensor def.
+        td = tensor_definitions.label_tensor_definition
+        npl = npl.multi_filter(tensor_definitions, td)
+        super(ClassSamplerMulti, self).__init__(td, npl)

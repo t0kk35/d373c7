@@ -8,17 +8,20 @@ import pathlib
 import datetime as dt
 import pandas as pd
 import numpy as np
+import multiprocessing as mp
 from functools import partial
 from typing import Dict, List
 from .common import EngineContext
 from .numpy_helper import NumpyList
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL, FeatureInferenceAttributes
 from ..features.common import FeatureTypeInteger
+from ..features.common import LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_LABEL
+from ..features.common import LEARNING_CATEGORY_CONTINUOUS
 from ..features.base import FeatureSource, FeatureIndex, FeatureBin
-from ..features.tensor import TensorDefinition
+from ..features.tensor import TensorDefinition, TensorDefinitionMulti, LEARNING_CATEGORIES
 from ..features.expanders import FeatureExpander, FeatureOneHot
 from ..features.normalizers import FeatureNormalize, FeatureNormalizeScale, FeatureNormalizeStandard
-from ..features.expressions import FeatureExpression
+from ..features.expressions import FeatureExpression, FeatureExpressionSeries
 from ..features.labels import FeatureLabel, FeatureLabelBinary
 
 logger = logging.getLogger(__name__)
@@ -38,7 +41,8 @@ PandaTypes: Dict[str, str] = {
     'INT_16': 'int16',
     'INT_64': 'int64',
     'DATE': 'str',
-    'CATEGORICAL': 'category'
+    'CATEGORICAL': 'category',
+    'DATETIME': 'datetime64'
 }
 
 
@@ -141,6 +145,25 @@ class EnginePandasNumpy(EngineContext):
                 f'{[field.name for field in unknown_logic]}'
             )
 
+    @staticmethod
+    def _val_key_feature_available(tensor_definition: TensorDefinition, key_feature: Feature):
+        if key_feature not in tensor_definition.features:
+            raise EnginePandaNumpyException(
+                f'The key feature used to build a series must be in the tensor_definition'
+            )
+
+    @staticmethod
+    def _val_time_feature_available(tensor_definition: TensorDefinition, time_feature: Feature):
+        if not isinstance(time_feature.type, FeatureTypeTimeBased):
+            raise EnginePandaNumpyException(
+                f'The time feature used to build a series must be date based. It is of type {time_feature.type}'
+            )
+
+        if time_feature not in tensor_definition.features:
+            raise EnginePandaNumpyException(
+                f'The time feature used to build a series must be in the tensor_definition'
+            )
+
     @property
     def num_threads(self):
         return self._num_threads
@@ -157,7 +180,7 @@ class EnginePandasNumpy(EngineContext):
             return default
         panda_type = PandaTypes.get(feature.type.name, default)
         if panda_type is None:
-            raise EnginePandaNumpyException(f'Did not find panda type for {feature}')
+            raise EnginePandaNumpyException(f'Did not find panda type for {feature.name}')
         else:
             return panda_type
 
@@ -187,6 +210,7 @@ class EnginePandasNumpy(EngineContext):
         self._val_features_defined_as_columns(df, tensor_def.embedded_features)
 
         source_features = [field for field in all_features if isinstance(field, FeatureSource)]
+        expression_features = [field for field in all_features if isinstance(field, FeatureExpression)]
         normalizer_features = [field for field in all_features if isinstance(field, FeatureNormalize)]
         index_features = [field for field in all_features if isinstance(field, FeatureIndex)]
         one_hot_features = [field for field in all_features if isinstance(field, FeatureOneHot)]
@@ -197,6 +221,7 @@ class EnginePandasNumpy(EngineContext):
             all_features,
             [
                 source_features,
+                expression_features,
                 normalizer_features,
                 index_features,
                 one_hot_features,
@@ -206,6 +231,7 @@ class EnginePandasNumpy(EngineContext):
 
         # Start processing
         df = _FeatureProcessor.process_source_feature(df, source_features)
+        df = _FeatureProcessor.process_expr_features(df, expression_features)
         df = _FeatureProcessor.process_one_hot_feature(df, one_hot_features, inference, self.one_hot_prefix)
         df = _FeatureProcessor.process_index_feature(df, index_features, inference)
         df = _FeatureProcessor.process_normalize_feature(df, normalizer_features, inference)
@@ -301,6 +327,13 @@ class EnginePandasNumpy(EngineContext):
         return df
 
     def to_numpy_list(self, tensor_def: TensorDefinition, df: pd.DataFrame) -> NumpyList:
+        """Method to convert a Pandas Dataframe to a object of type NumpyList. A NumpyList is an object which contains
+        multiple Numpy arrays. The Numpy array can be turned into Pytorch Tensors.
+
+        :param tensor_def: The TensorDefinition Object used to create the Pandas DataFrame.
+        :param df: The Pandas DataFrame to convert to a NumpyList object.
+        :return: A NumpyList Object containing Numpy arrays for the data in the Pandas DataFrame.
+        """
         self._val_features_defined_as_columns(df, tensor_def.features)
 
         n = []
@@ -318,6 +351,155 @@ class EnginePandasNumpy(EngineContext):
 
         npl = NumpyList(n)
         return npl
+
+    def multi_to_numpy_list(self, tensor_def: TensorDefinitionMulti, df: [pd.DataFrame]) -> NumpyList:
+        """Method to convert a Pandas Dataframe to a object of type NumpyList. A NumpyList is an object which contains
+        multiple Numpy arrays. The Numpy array can be turned into Pytorch Tensors. Other than the regular to_numpy
+        method, this method supports multi-head input, it takes a list of TensorDefinitions and DataFrames.
+
+        :param tensor_def: The TensorDefinitionMulti object used to create the Pandas DataFrame.
+        :param df: The *list* of Pandas DataFrames to convert to a NumpyList object.
+        :return: A NumpyList Object containing Numpy arrays for the data in the Pandas DataFrame.
+        """
+        npl = [self.to_numpy_list(td, df) for td, df in zip(tensor_def.tensor_definitions, df)]
+        npl = [lst for n in npl for lst in n.lists]
+        npl = NumpyList(npl)
+        return npl
+
+    @staticmethod
+    def _process_key_sequence(rows: pd.DataFrame, time_field: Feature,
+                              i_con_features: List[Feature], i_bin_features: List[Feature],
+                              i_cat_features: List[Feature], con_type: str, bin_type: str, cat_type: str,
+                              s_con_features: List[Feature], s_bin_features: List[Feature],
+                              s_cat_features: List[Feature], length: int):
+
+        # First sort
+        sort = rows.sort_values(by=[time_field.name], ascending=True)
+        indexes = sort.index
+
+        # Enrich the series.
+        for f_lst in (s_con_features, s_bin_features, s_cat_features):
+            for f in f_lst:
+                if isinstance(f, FeatureExpressionSeries):
+                    t = EnginePandasNumpy.panda_type(f)
+                    sort[f.name] = f.expression(sort[[p.name for p in f.param_features]]).astype(t)
+                else:
+                    raise EnginePandaNumpyException(f'Don\'t know how to build series feature {f.name}')
+
+        # Generator to make sure we have the correct Learning Category order.
+        def return_in_order(i_con, i_bin, i_cat, s_con, s_bin, s_cat, cn_type, b_type, ct_type):
+            for lc in LEARNING_CATEGORIES:
+                if lc == LEARNING_CATEGORY_CONTINUOUS:
+                    yield i_con + s_con, cn_type
+                elif lc == LEARNING_CATEGORY_BINARY:
+                    yield i_bin + s_bin, b_type
+                elif lc == LEARNING_CATEGORY_CATEGORICAL:
+                    yield i_cat + s_cat, ct_type
+                elif lc == LEARNING_CATEGORY_LABEL:
+                    pass
+                else:
+                    raise EnginePandaNumpyException(f'Very unexpected internal error <{lc}>')
+
+        lists = return_in_order(i_con_features, i_bin_features, i_cat_features,
+                                s_con_features, s_bin_features, s_cat_features,
+                                con_type, bin_type, cat_type)
+        # Convert everything to numpy for performance.
+        np_series = [sort[[f.name for f in f_lst]].to_numpy(np_type) for f_lst, np_type in lists]
+        np_series = [ns for ns in np_series if ns.shape[1] != 0]
+
+        def process_row(i: int):
+            x = indexes[i]
+            # Select the listed fields by name
+            s = [ns[max(0, i - length + 1):i + 1] for ns in np_series]
+            # Pad if incomplete. I.e. There were less than length rows before this row.
+            s = [np.concatenate((np.zeros((length - e.shape[0], e.shape[1]), dtype=e.dtype), e))
+                 if e.shape[0] < length else e for e in s]
+            return [x] + s
+
+        # Process all the rows. Return a padded Numpy array of the correct length.
+        lists = [process_row(i) for i in range(len(sort))]
+        return lists
+
+    def to_series_stacked(self, df: pd.DataFrame, tensor_def: TensorDefinition, key_field: Feature,
+                          time_field: Feature, length: int) -> NumpyList:
+
+        self._val_key_feature_available(tensor_def, key_field)
+        self._val_time_feature_available(tensor_def, time_field)
+
+        # Split off the Series specific features.
+        i_con_features = [
+            f for f in tensor_def.continuous_features(True) if not isinstance(f, FeatureExpressionSeries)
+        ]
+        i_bin_features = [
+            f for f in tensor_def.binary_features(True) if not isinstance(f, FeatureExpressionSeries)
+        ]
+        i_cat_features = [
+            f for f in tensor_def.categorical_features(True) if not isinstance(f, FeatureExpressionSeries)
+        ]
+        s_con_features = [
+            f for f in tensor_def.continuous_features(True) if isinstance(f, FeatureExpressionSeries)
+        ]
+        s_bin_features = [
+            f for f in tensor_def.binary_features(True) if isinstance(f, FeatureExpressionSeries)
+        ]
+        s_cat_features = [
+            f for f in tensor_def.categorical_features(True) if isinstance(f, FeatureExpressionSeries)
+        ]
+        l_feature = [
+            f for f in tensor_def.label_features(True)
+        ]
+
+        con_td = TensorDefinition('dummy_con', i_con_features + s_con_features)
+        bin_td = TensorDefinition('dummy_bin', i_bin_features + s_bin_features)
+        cat_td = TensorDefinition('dummy_cat', i_cat_features + s_cat_features)
+        lab_td = TensorDefinition('dummy_label', l_feature)
+
+        con_type = con_td.highest_precision_feature if len(con_td) > 0 else None
+        bin_type = bin_td.highest_precision_feature if len(bin_td) > 0 else None
+        cat_type = cat_td.highest_precision_feature if len(cat_td) > 0 else None
+        lab_type = lab_td.highest_precision_feature if len(lab_td) > 0 else None
+
+        con_type = self.panda_type(con_type, 'float64')
+        bin_type = self.panda_type(bin_type, 'int8')
+        cat_type = self.panda_type(cat_type, 'int32')
+        lab_type = self.panda_type(lab_type, 'float32')
+
+        key_function = partial(
+            self._process_key_sequence,
+            time_field=time_field,
+            i_con_features=i_con_features,
+            i_bin_features=i_bin_features,
+            i_cat_features=i_cat_features,
+            s_con_features=s_con_features,
+            s_bin_features=s_bin_features,
+            s_cat_features=s_cat_features,
+            con_type=con_type,
+            bin_type=bin_type,
+            cat_type=cat_type,
+            length=length
+        )
+
+        if self.num_threads is not None:
+            num_processes = self.num_threads
+        else:
+            num_processes = int(mp.cpu_count() * 0.8)
+        logger.info(f'Start creating stacked series for Tensor Definition <{tensor_def.name}> '
+                    f'using {num_processes} process(es)')
+
+        with mp.Pool(num_processes) as p:
+            series = p.map(key_function, [rows for _, rows in df.groupby(key_field.name)])
+        series = [s for keys in series for s in keys]
+        # Need to sort to get back in the order of the index
+        series.sort(key=lambda x: x[0])
+        series = [np.array(s) for s in list(zip(*series))[1:]]
+        # Add the label(s)
+        if len(l_feature) != 0:
+            labels = df[[f.name for f in l_feature]].to_numpy().astype(lab_type)
+            series.append(labels)
+        logger.info(f'Returning series of types {[str(s.dtype) for s in series]}.')
+        # Turn it into a NumpyList
+        series = NumpyList(series)
+        return series
 
 
 class _FeatureProcessor:
@@ -463,9 +645,10 @@ class _FeatureProcessor:
 
     @staticmethod
     def process_expr_features(df: pd.DataFrame, features: List[FeatureExpression]) -> pd.DataFrame:
-        # Add the expression fields
+        # Add the expression fields. Just call the expression with the parameter names. Use vectorization. Second best
+        # to Native vectorization and faster than apply.
         for feature in features:
             t = np.dtype(EnginePandasNumpy.panda_type(feature))
-            # TODO this might not work for multiple parameters
-            df[feature.name] = df[feature.param_features[0].name].map(feature.expression).astype(t)
+            df[feature.name] = np.vectorize(feature.expression)(df[[f.name for f in feature.param_features]])
+            df[feature.name].astype(t)
         return df

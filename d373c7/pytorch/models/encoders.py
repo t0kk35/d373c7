@@ -5,7 +5,7 @@ Module for encoder Models
 import logging
 import torch
 import torch.nn as nn
-from .common import _Model, _TensorHeadModel, ModelDefaults, PyTorchModelException
+from .common import _Model, TensorHeadModel, ModelDefaults, PyTorchModelException
 from ..common import _History
 from ..layers import LinDropAct, BinaryOutput
 from ..layers.variational import VAELinearToLatent, VAELatentToLinear
@@ -106,7 +106,7 @@ class AutoEncoderDefaults(ModelDefaults):
         self.set('vae_loss_kl_weight', 1.0)
 
 
-class _LinearEncoder(_TensorHeadModel):
+class _LinearEncoder(TensorHeadModel):
     def __init__(self, tensor_def: TensorDefinition, layers: List[int], defaults: ModelDefaults):
         super(_LinearEncoder, self).__init__(tensor_def, defaults)
         do = defaults.get_float('lin_interlayer_drop_out')
@@ -114,7 +114,7 @@ class _LinearEncoder(_TensorHeadModel):
         self.linear = LinDropAct(self.head.output_size, ly)
 
     def forward(self, x):
-        x = _TensorHeadModel.forward(self, x)
+        x = TensorHeadModel.forward(self, x)
         x = self.linear(x)
         return x
 

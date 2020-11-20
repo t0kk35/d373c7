@@ -5,37 +5,19 @@ Module for classifier Models
 import logging
 import torch
 import torch.nn as nn
-from .common import _LossBase, PyTorchModelException, ModelDefaults, _TensorHeadModel, _History
-from ..layers import SingleClassBinaryOutput, LinDropAct
+from .common import _LossBase, PyTorchModelException, ModelDefaults, _History, _Model
+from ..layers import SingleClassBinaryOutput, LinDropAct, TensorDefinitionHead, TensorDefinitionHeadMulti
+# noinspection PyProtectedMember
+from ..layers.common import _Layer
 from ..optimizer import _Optimizer, AdamWOptimizer
 from ..loss import SingleLabelBCELoss
-from ...features import TensorDefinition, LEARNING_CATEGORY_LABEL, FeatureLabelBinary
+from ..data import NumpyListDataSetMulti
+from ...features import TensorDefinition, TensorDefinitionMulti, LEARNING_CATEGORY_LABEL, FeatureLabelBinary
+from ...features import FeatureCategorical
 from typing import List, Dict
 
 
 logger = logging.getLogger(__name__)
-
-
-class _ClassifierModel(_TensorHeadModel):
-    @staticmethod
-    def _val_has_lc_label(tensor_def: TensorDefinition):
-        if LEARNING_CATEGORY_LABEL not in tensor_def.learning_categories:
-            raise PyTorchModelException(
-                f'Tensor Definition <{tensor_def.name}> does not have a label learning category. '
-                f'Can not build a classifier without a label. Please the .set_label(xyz) on the tensor definition'
-            )
-
-    def __init__(self, tensor_def: TensorDefinition, defaults: ModelDefaults):
-        super(_ClassifierModel, self).__init__(tensor_def, defaults)
-        _ClassifierModel._val_has_lc_label(tensor_def)
-        self._label_index = tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
-
-    def get_y(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
-        # Return the label with Learning Category 'LEARNING_CATEGORY_LABEL'
-        return ds[self._label_index: self._label_index+1]
-
-    def optimizer(self, lr=None, wd=None) -> _Optimizer:
-        return AdamWOptimizer(self, lr, wd)
 
 
 class BinaryClassifierHistory(_History):
@@ -119,20 +101,15 @@ class ClassifierDefaults(ModelDefaults):
         self.set('lin_interlayer_drop_out', dropout)
 
 
-class FeedForwardFraudClassifier(_ClassifierModel):
-    """Create a FeedForward Fraud classifier neural net. This model only uses Linear (Feedforward) layers. It is the
-    simplest form of Neural Net. The input will be run through a set of Linear layers and ends with a layer of size 1.
-    This one number will be an interval between 0-1 and indicate how likely this is fraud. The model uses
-    BinaryCrossEntropy loss.
+class BinaryClassifier(_Model):
+    @staticmethod
+    def _val_has_lc_label(tensor_def: TensorDefinition):
+        if LEARNING_CATEGORY_LABEL not in tensor_def.learning_categories:
+            raise PyTorchModelException(
+                f'Tensor Definition <{tensor_def.name}> does not have a label learning category. '
+                f'Can not build a classifier without a label. Please the .set_label(xyz) on the tensor definition'
+            )
 
-    Args:
-        tensor_def: The Tensor Definition that will be used
-        layers: A list of integers. Drives the number of layers and their size. For instance [64,32,16] would create a
-        neural net with 3 layers of size 64, 32 and 16 respectively. Note that the NN will also have an additional
-        input layer (depends on the tensor_def) and an output layer.
-        defaults: Optional defaults object. If omitted, the ClassifierDefaults will be used.
-
-    """
     def _val_layers(self, layers: List[int]):
         if not isinstance(layers, List):
             raise PyTorchModelException(
@@ -160,28 +137,113 @@ class FeedForwardFraudClassifier(_ClassifierModel):
                 f'{FeatureLabelBinary.__class__.__name__} '
             )
 
-    def __init__(self, tensor_def: TensorDefinition, layers: List[int], defaults=ClassifierDefaults()):
-        super(FeedForwardFraudClassifier, self).__init__(tensor_def, defaults)
+    def __init__(self, tensor_def: TensorDefinition, layers: List[int], defaults: ClassifierDefaults):
+        super(BinaryClassifier, self).__init__(defaults)
         self._val_layers(layers)
+        self._tensor_def = tensor_def
+        self._val_has_lc_label(tensor_def)
         self._val_label(tensor_def)
         do = self.defaults.get_float('lin_interlayer_drop_out')
         bn = self.defaults.get_bool('batch_norm')
         ly = [(i, do) for i in layers]
+        self.head = self.init_head()
         self.linear = LinDropAct(self.head.output_size, ly)
         self.bn = nn.BatchNorm1d(self.linear.output_size) if bn else None
         self.out = SingleClassBinaryOutput(self.linear.output_size)
-        self._loss_fn = SingleLabelBCELoss()
+
+    @property
+    def label_index(self) -> int:
+        raise NotImplemented(f'Class label index should be implemented by children')
+
+    def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
+        return self.head.get_x(ds)
+
+    def get_y(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
+        # Return the label with Learning Category 'LEARNING_CATEGORY_LABEL'
+        return ds[self.label_index: self.label_index+1]
+
+    def optimizer(self, lr=None, wd=None) -> _Optimizer:
+        return AdamWOptimizer(self, lr, wd)
+
+    def loss_fn(self) -> _LossBase:
+        return SingleLabelBCELoss()
+
+    def history(self, *args) -> _History:
+        return BinaryClassifierHistory(*args)
 
     def forward(self, x):
-        x = _TensorHeadModel.forward(self, x)
+        x = self.head(x)
         x = self.linear(x)
         if self.bn is not None:
             x = self.bn(x)
         x = self.out(x)
         return x
 
-    def loss_fn(self) -> _LossBase:
-        return self._loss_fn
+    def init_head(self) -> _Model:
+        raise NotImplemented('Should be implemented by Children')
 
-    def history(self, *args) -> _History:
-        return BinaryClassifierHistory(*args)
+    def embedding_weights(self, feature: FeatureCategorical, as_numpy: bool = False):
+        w = self.head.embedding_weight(feature)
+        if as_numpy:
+            w = w.cpu().detach().numpy()
+        return w
+
+
+class FeedForwardFraudClassifier(BinaryClassifier):
+    """Create a FeedForward Fraud classifier neural net. This model only uses Linear (Feedforward) layers. It is the
+    simplest form of Neural Net. The input will be run through a set of Linear layers and ends with a layer of size 1.
+    This one number will be an interval between 0-1 and indicate how likely this is fraud. The model uses
+    BinaryCrossEntropy loss.
+
+    Args:
+        tensor_def: The Tensor Definition that will be used
+        layers: A list of integers. Drives the number of layers and their size. For instance [64,32,16] would create a
+        neural net with 3 layers of size 64, 32 and 16 respectively. Note that the NN will also have an additional
+        input layer (depends on the tensor_def) and an output layer.
+        defaults: Optional defaults object. If omitted, the ClassifierDefaults will be used.
+
+    """
+    def __init__(self, tensor_def: TensorDefinition, layers: List[int], defaults=ClassifierDefaults()):
+        self._t_def = tensor_def
+        self._label_index = self._t_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        super(FeedForwardFraudClassifier, self).__init__(tensor_def, layers, defaults)
+
+    def init_head(self) -> _Layer:
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        return TensorDefinitionHead(self._t_def, do, mn, mx)
+
+    @property
+    def label_index(self) -> int:
+        return self._label_index
+
+
+class FeedForwardFraudClassifierMulti(BinaryClassifier):
+    """Create a FeedForward Fraud classifier neural net. This model only uses Linear (Feedforward) layers. It is the
+    simplest form of Neural Net. The input will be run through a set of Linear layers and ends with a layer of size 1.
+    This one number will be an interval between 0-1 and indicate how likely this is fraud. The model uses
+    BinaryCrossEntropy loss. This version has multi-head support, it can be fed a TensorDefinitionMulti.
+
+    Args:
+        tensor_def: The Tensor Definition Multi that will be used
+        layers: A list of integers. Drives the number of layers and their size. For instance [64,32,16] would create a
+        neural net with 3 layers of size 64, 32 and 16 respectively. Note that the NN will also have an additional
+        input layer (depends on the tensor_def) and an output layer.
+        defaults: Optional defaults object. If omitted, the ClassifierDefaults will be used.
+
+    """
+    def __init__(self, tensor_def: TensorDefinitionMulti, layers: List[int], defaults=ClassifierDefaults()):
+        self._t_def = tensor_def
+        self._label_index = NumpyListDataSetMulti.label_index(tensor_def)
+        super(FeedForwardFraudClassifierMulti, self).__init__(tensor_def.label_tensor_definition, layers, defaults)
+
+    def init_head(self) -> _Layer:
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        return TensorDefinitionHeadMulti(self._t_def, do, mn, mx)
+
+    @property
+    def label_index(self) -> int:
+        return self._label_index

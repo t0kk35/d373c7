@@ -70,9 +70,8 @@ class ModelDefaults:
 
 
 class _Model(nn.Module):
-    def __init__(self, tensor_def: TensorDefinition, defaults: ModelDefaults):
+    def __init__(self, defaults: ModelDefaults):
         nn.Module.__init__(self)
-        self._tensor_def = tensor_def
         self._model_defaults = defaults
 
     def _forward_unimplemented(self, *inp: Any) -> None:
@@ -99,10 +98,6 @@ class _Model(nn.Module):
         )
 
     @property
-    def tensor_definition(self):
-        return self._tensor_def
-
-    @property
     def loss_fn(self) -> _LossBase:
         raise NotImplemented(f'Loss Function getter not implemented in base _Model Class. '
                              f'Needs to be implemented by the child classes')
@@ -116,7 +111,10 @@ class _Model(nn.Module):
         return self._model_defaults
 
     def optimizer(self, lr=None, wd=None) -> _Optimizer:
-        pass
+        raise NotImplemented(
+            f'optimizer method not unimplemented in {self.__class__.name}. '
+            + f'Children of _Model should implement this method'
+        )
 
     def history(self, *args) -> _History:
         raise NotImplemented(f'History getter not implemented in base _History class. Must be implemented by children')
@@ -161,13 +159,18 @@ class _ModelManager:
         self._model.load_state_dict(torch.load(path))
 
 
-class _TensorHeadModel(_Model):
+class TensorHeadModel(_Model):
     def __init__(self, tensor_def: TensorDefinition, defaults: ModelDefaults):
-        super(_TensorHeadModel, self).__init__(tensor_def, defaults)
+        super(TensorHeadModel, self).__init__(defaults)
         mn = self.defaults.get_int('emb_min_dim')
         mx = self.defaults.get_int('emb_max_dim')
         do = self.defaults.get_float('emb_dropout')
+        self._tensor_def = tensor_def
         self.head = TensorDefinitionHead(tensor_def, do, mn, mx)
+
+    @property
+    def tensor_definition(self):
+        return self._tensor_def
 
     def forward(self, x):
         x = self.head(x)
@@ -182,3 +185,7 @@ class _TensorHeadModel(_Model):
         if as_numpy:
             w = w.cpu().detach().numpy()
         return w
+
+    @property
+    def output_size(self) -> int:
+        return self.head.output_size

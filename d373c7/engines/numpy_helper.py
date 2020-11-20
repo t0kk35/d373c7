@@ -4,7 +4,7 @@ Definition of a set of Numpy Helper classes.
 """
 import logging
 import numpy as np
-from ..features import TensorDefinition, LEARNING_CATEGORY_LABEL
+from ..features import TensorDefinition, TensorDefinitionMulti, LEARNING_CATEGORY_LABEL
 from typing import List, Tuple, Any
 
 logger = logging.getLogger(__name__)
@@ -270,8 +270,8 @@ class NumpyList:
         """Method to validate that a Numpy list was likely built from a specific tensor definition. The data types can
         not be checked. The checks mainly revolve around the sizes of the lists.
 
-        :param:tensor_definition. The tensor definition to be checked.
-        :return: True of False. True if this Numpy List and TensorDefinition are compatible
+        :param tensor_definition: The tensor definition to be checked.
+        :return: True of False True if this Numpy List and TensorDefinition are compatible
         """
         if not tensor_definition.inference_ready:
             logger.info(f'Tensor Definition and Numpy list not compatible. Tensor Definition is not inference ready')
@@ -299,3 +299,32 @@ class NumpyList:
 
         # All good if we manage to get here.
         return True
+
+    def multi_filter(self, tensor_def_m: TensorDefinitionMulti, tensor_def_filter: TensorDefinition) -> 'NumpyList':
+        """Filters the lists of a specific tensor_definition out of the TensorDefinitionMultiHead
+
+        :param tensor_def_m: The TensorDefinitionMulti that was used to build the Numpy.
+        :param tensor_def_filter: The TensorDefinition we want the lists for.
+        :return: New NumpyList object containing only the lists of the filtered TensorDefinition
+        """
+        lc_count = [0] + [len(td.learning_categories) for td in tensor_def_m.tensor_definitions]
+        i = tensor_def_m.tensor_definitions.index(tensor_def_filter)
+        start, end = lc_count[i], lc_count[i] + lc_count[i+1]
+        npl = NumpyList(self.lists[start: end])
+        return npl
+
+    def multi_is_built_from(self, tensor_def: TensorDefinitionMulti):
+        """Method to validate that a Numpy list was likely built from a specific TensorDefinitionMultiHead object. The
+        data types can not be checked. The checks mainly revolve around the sizes of the lists. This method supports
+        multi-head.
+
+        :param tensor_def: The TensorDefinitionMultiHead object that needs to be checked.
+        :return: True of False. True if this Numpy List and TensorDefinition are compatible
+        """
+        # Split the Numpy list into the components from each TensorDefinition
+        nps = [self.multi_filter(tensor_def, td) for td in tensor_def.tensor_definitions]
+        r = [npl.is_built_from(td) for td, npl in zip(tensor_def.tensor_definitions, nps)]
+        if False in r:
+            return False
+        else:
+            return True

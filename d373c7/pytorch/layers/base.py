@@ -5,7 +5,7 @@ Module for common layers
 import torch
 import torch.nn as nn
 from .common import _Layer, PyTorchLayerException
-from ...features.tensor import TensorDefinition
+from ...features.tensor import TensorDefinition, TensorDefinitionMulti
 from ...features.common import LEARNING_CATEGORY_BINARY, FeatureCategorical
 from ...features import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL
 from typing import List, Tuple
@@ -165,14 +165,15 @@ class TensorDefinitionHead(_Layer):
             self._output_size += self.embedding.output_size
         else:
             self.embedding = None
-
-    @property
-    def x_indexes(self) -> List[int]:
-        return list(self._used_learning_categories.values())
+        self._indexes = list(self._used_learning_categories.values())
 
     @property
     def output_size(self) -> int:
         return self._output_size
+
+    @property
+    def x_indexes(self) -> List[int]:
+        return self._indexes
 
     def extra_repr(self) -> str:
         return f'lcs={[e.name for e in self._used_learning_categories.keys()]}'
@@ -195,5 +196,44 @@ class TensorDefinitionHead(_Layer):
         x = torch.cat(cat_list, dim=1)
         return x
 
+    def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
+        x = [ds[x] for x in self._indexes]
+        return x
+
     def embedding_weight(self, feature: FeatureCategorical) -> torch.Tensor:
         return self.embedding.embedding_weight(feature)
+
+
+class TensorDefinitionHeadMulti(_Layer):
+    def __init__(self, tensor_def: TensorDefinitionMulti, emb_dropout: float, emb_min_dim: int, emb_max_dim: int):
+        super(TensorDefinitionHeadMulti, self).__init__()
+        self.tensor_definition = tensor_def
+        self.heads = [TensorDefinitionHead(td, emb_dropout, emb_min_dim, emb_max_dim)
+                      for td in tensor_def.tensor_definitions]
+        self._output_size = sum([h.output_size for h in self.heads])
+        lcs = [0] + [len(td.learning_categories) for td in tensor_def.tensor_definitions]
+        self._indexes = [[ind + lcs[i] for ind in h.x_indexes] for i, h in enumerate(self.heads)]
+
+    @property
+    def x_indexes(self) -> List[int]:
+        return self._x_indexes
+
+    @property
+    def output_size(self) -> int:
+        return self._output_size
+
+    def forward(self, x):
+        x = [h([x[ind] for ind in self._indexes[i]]) for i, h in enumerate(self.heads)]
+        x = torch.cat(x, dim=1)
+        return x
+
+    def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
+        x = [ds[i] for ind in self._indexes for i in ind]
+        return x
+
+    def embedding_weight(self, feature: FeatureCategorical) -> torch.Tensor:
+        h = [i for i, td in enumerate(self.tensor_definition.tensor_definitions) if feature in td.features]
+        return self.heads[h[0]].embedding.embedding_weight(feature)
+
+    def extra_repr(self) -> str:
+        return f'Embedded TDs={[td.name for td in self.tensor_definition.tensor_definitions]}'

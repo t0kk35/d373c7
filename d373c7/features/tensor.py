@@ -239,3 +239,26 @@ class TensorDefinition:
         :return: List of label features in this Tensor Definition
         """
         return self.filter_features(LEARNING_CATEGORY_LABEL, expand)
+
+
+class TensorDefinitionMulti:
+    """Class for Multi-Head TensorDefinitions. They basically hold multiple Tensor Definitions.
+
+    Args:
+        tensor_def: List of TensorDefinitions to be bundled in the Multi-Head Tensor Definition.
+    """
+    def __init__(self, tensor_def: List[TensorDefinition]):
+        self.tensor_def = tensor_def
+
+    @property
+    def tensor_definitions(self) -> List[TensorDefinition]:
+        return self.tensor_def
+
+    @property
+    def label_tensor_definition(self) -> TensorDefinition:
+        """Returns the TensorDefinition out of the various TensorDefinition that has the labels.
+
+        :return: The TensorDefinition has contains the labels
+        """
+        td = [td for td in self.tensor_definitions if LEARNING_CATEGORY_LABEL in td.learning_categories]
+        return td[0]

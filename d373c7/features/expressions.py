@@ -71,3 +71,17 @@ class FeatureExpression(Feature):
             return LEARNING_CATEGORY_CATEGORICAL
         else:
             return LEARNING_CATEGORY_NONE
+
+
+class FeatureExpressionSeries(FeatureExpression):
+    def _val_expression_not_lambda(self):
+        if self.is_lambda:
+            raise FeatureDefinitionException(
+                f'The expression for series expression feature <{self.name}> can not be a lambda expression. ' +
+                f'Lambdas are not serializable during multi-processing. ' +
+                f'The "expression" parameter for series expressions must be a function'
+            )
+
+    def __init__(self, name: str, f_type: FeatureType, expression: Callable, features: List[Feature]):
+        super(FeatureExpressionSeries, self).__init__(name, f_type, expression, features)
+        self._val_expression_not_lambda()
