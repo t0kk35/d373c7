@@ -283,19 +283,20 @@ class NumpyList:
             logger.info(f'Tensor Definition and Numpy list not compatible. Expected {len(lc)} lists in the Numpy list')
             return False
 
-        for lc, npl in zip(lc, self.lists):
-            f = tensor_definition.filter_features(lc, expand=True)
-            if tensor_definition.rank == 2:
-                shape = npl.shape[1] if len(npl.shape) > 1 else 1
-                if len(f) != shape:
-                    logger.info(
-                        f'Tensor Definition and Numpy not compatible. '
-                        f'Learning Type {lc.name} does not have same # elements'
-                    )
-                    return False
-            else:
-                logger.info(f'Tensor Definition and Numpy not compatible. Rank in definition {tensor_definition.rank}')
-                return False
+        # TODO Fix for Series
+        # for lc, npl in zip(lc, self.lists):
+        #     f = tensor_definition.filter_features(lc, expand=True)
+        #     if tensor_definition.rank == 2:
+        #         shape = npl.shape[1] if len(npl.shape) > 1 else 1
+        #         if len(f) != shape:
+        #             logger.info(
+        #                 f'Tensor Definition and Numpy not compatible. '
+        #                 f'Learning Type {lc.name} does not have same # elements'
+        #             )
+        #             return False
+        #     else:
+        #         logger.info(f'Tensor Definition and Numpy not compatible. Rank in definition {tensor_definition.rank}')
+        #         return False
 
         # All good if we manage to get here.
         return True

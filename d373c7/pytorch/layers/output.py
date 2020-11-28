@@ -2,13 +2,10 @@
 Module for layers that are typically used as output
 (c) 2020 d373c7
 """
-from typing import Any
-
 import torch
 import torch.nn as nn
 from math import sqrt
-from .common import _Layer, PyTorchLayerException
-from .base import LinDropAct
+from .common import _Layer
 from ...features.common import FeatureCategorical
 from ...features.tensor import TensorDefinition
 

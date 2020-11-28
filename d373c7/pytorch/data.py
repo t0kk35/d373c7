@@ -162,6 +162,7 @@ class ClassSampler:
         _, class_balance = self._npl.unique(label_index)
         weights = 1./torch.tensor(class_balance, dtype=torch.float)
         sample_weights = weights[self._npl.lists[label_index].astype(int)]
+        sample_weights = torch.squeeze(sample_weights)
         train_sampler = torch.utils.data.sampler.WeightedRandomSampler(
             weights=sample_weights,
             num_samples=len(self._npl),

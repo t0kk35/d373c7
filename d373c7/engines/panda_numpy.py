@@ -420,6 +420,7 @@ class EnginePandasNumpy(EngineContext):
         lists = [process_row(i) for i in range(len(sort))]
         return lists
 
+    # TODO switch position of df and tensor_def for consistency with to_numpy
     def to_series_stacked(self, df: pd.DataFrame, tensor_def: TensorDefinition, key_field: Feature,
                           time_field: Feature, length: int) -> NumpyList:
 
@@ -499,6 +500,9 @@ class EnginePandasNumpy(EngineContext):
         logger.info(f'Returning series of types {[str(s.dtype) for s in series]}.')
         # Turn it into a NumpyList
         series = NumpyList(series)
+        # Don't forget to set the Rank.
+        tensor_def.rank = 3
+        logger.info(f'Done creating {tensor_def.name}. Shapes={series.shapes}')
         return series
 
 

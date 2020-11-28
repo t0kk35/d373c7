@@ -193,7 +193,7 @@ class TensorDefinitionHead(_Layer):
                     else:
                         p = x[i]
                     cat_list.append(p)
-        x = torch.cat(cat_list, dim=1)
+        x = torch.cat(cat_list, dim=self._rank-1)
         return x
 
     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
@@ -208,8 +208,9 @@ class TensorDefinitionHeadMulti(_Layer):
     def __init__(self, tensor_def: TensorDefinitionMulti, emb_dropout: float, emb_min_dim: int, emb_max_dim: int):
         super(TensorDefinitionHeadMulti, self).__init__()
         self.tensor_definition = tensor_def
-        self.heads = [TensorDefinitionHead(td, emb_dropout, emb_min_dim, emb_max_dim)
-                      for td in tensor_def.tensor_definitions]
+        self.heads = nn.ModuleList(
+            [TensorDefinitionHead(td, emb_dropout, emb_min_dim, emb_max_dim) for td in tensor_def.tensor_definitions]
+        )
         self._output_size = sum([h.output_size for h in self.heads])
         lcs = [0] + [len(td.learning_categories) for td in tensor_def.tensor_definitions]
         self._indexes = [[ind + lcs[i] for ind in h.x_indexes] for i, h in enumerate(self.heads)]
@@ -222,9 +223,8 @@ class TensorDefinitionHeadMulti(_Layer):
     def output_size(self) -> int:
         return self._output_size
 
-    def forward(self, x):
+    def forward(self, x) -> List[torch.Tensor]:
         x = [h([x[ind] for ind in self._indexes[i]]) for i, h in enumerate(self.heads)]
-        x = torch.cat(x, dim=1)
         return x
 
     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:

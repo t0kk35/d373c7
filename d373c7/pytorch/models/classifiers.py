@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from .common import _LossBase, PyTorchModelException, ModelDefaults, _History, _Model
 from ..layers import SingleClassBinaryOutput, LinDropAct, TensorDefinitionHead, TensorDefinitionHeadMulti
+from ..layers import LSTMBody, GRUBody, BodyMulti
 # noinspection PyProtectedMember
 from ..layers.common import _Layer
 from ..optimizer import _Optimizer, AdamWOptimizer
@@ -14,7 +15,7 @@ from ..loss import SingleLabelBCELoss
 from ..data import NumpyListDataSetMulti
 from ...features import TensorDefinition, TensorDefinitionMulti, LEARNING_CATEGORY_LABEL, FeatureLabelBinary
 from ...features import FeatureCategorical
-from typing import List, Dict
+from typing import List, Dict, Union
 
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ class ClassifierDefaults(ModelDefaults):
     def __init__(self):
         super(ClassifierDefaults, self).__init__()
         self.emb_dim(4, 100, 0.2)
-        self.set_batch_norm(True)
+        self.set_linear_batch_norm(True)
         self.set('lin_interlayer_drop_out', 0.1)
 
     def emb_dim(self, minimum: int, maximum: int, dropout: float):
@@ -85,12 +86,12 @@ class ClassifierDefaults(ModelDefaults):
         self.set('emb_max_dim', maximum)
         self.set('emb_dropout', dropout)
 
-    def set_batch_norm(self, flag: bool) -> None:
+    def set_linear_batch_norm(self, flag: bool) -> None:
         """Define if a batch norm layer will be added before the final hidden layer.
 
         :return: None
         """
-        self.set('batch_norm', flag)
+        self.set('lin_batch_norm', flag)
 
     def set_inter_layer_drop_out(self, dropout: float) -> None:
         """Sets the interlayer drop out parameter. Interlayer dropout is the drop out between linear layers.
@@ -144,10 +145,12 @@ class BinaryClassifier(_Model):
         self._val_has_lc_label(tensor_def)
         self._val_label(tensor_def)
         do = self.defaults.get_float('lin_interlayer_drop_out')
-        bn = self.defaults.get_bool('batch_norm')
+        bn = self.defaults.get_bool('lin_batch_norm')
         ly = [(i, do) for i in layers]
         self.head = self.init_head()
-        self.linear = LinDropAct(self.head.output_size, ly)
+        self.body = self.init_body()
+        size_after_body = self.head.output_size if self.body is None else self.body.output_size
+        self.linear = LinDropAct(size_after_body, ly)
         self.bn = nn.BatchNorm1d(self.linear.output_size) if bn else None
         self.out = SingleClassBinaryOutput(self.linear.output_size)
 
@@ -173,13 +176,18 @@ class BinaryClassifier(_Model):
 
     def forward(self, x):
         x = self.head(x)
+        if self.body is not None:
+            x = self.body(x)
         x = self.linear(x)
         if self.bn is not None:
             x = self.bn(x)
         x = self.out(x)
         return x
 
-    def init_head(self) -> _Model:
+    def init_head(self) -> _Layer:
+        raise NotImplemented('Should be implemented by Children')
+
+    def init_body(self) -> Union[_Layer, None]:
         raise NotImplemented('Should be implemented by Children')
 
     def embedding_weights(self, feature: FeatureCategorical, as_numpy: bool = False):
@@ -214,6 +222,9 @@ class FeedForwardFraudClassifier(BinaryClassifier):
         do = self.defaults.get_float('emb_dropout')
         return TensorDefinitionHead(self._t_def, do, mn, mx)
 
+    def init_body(self) -> Union[_Layer, None]:
+        return None
+
     @property
     def label_index(self) -> int:
         return self._label_index
@@ -234,15 +245,126 @@ class FeedForwardFraudClassifierMulti(BinaryClassifier):
 
     """
     def __init__(self, tensor_def: TensorDefinitionMulti, layers: List[int], defaults=ClassifierDefaults()):
-        self._t_def = tensor_def
-        self._label_index = NumpyListDataSetMulti.label_index(tensor_def)
+        self._t_def_m = tensor_def
         super(FeedForwardFraudClassifierMulti, self).__init__(tensor_def.label_tensor_definition, layers, defaults)
+        self._label_index = NumpyListDataSetMulti.label_index(tensor_def)
 
     def init_head(self) -> _Layer:
         mn = self.defaults.get_int('emb_min_dim')
         mx = self.defaults.get_int('emb_max_dim')
         do = self.defaults.get_float('emb_dropout')
-        return TensorDefinitionHeadMulti(self._t_def, do, mn, mx)
+        return TensorDefinitionHeadMulti(self._t_def_m, do, mn, mx)
+
+    def init_body(self) -> Union[_Layer, None]:
+        # Make None layer. This will just concat the layers in the BodyMulti
+        lys = [None for _ in self._t_def_m.tensor_definitions]
+        ly = BodyMulti(self.head, lys)
+        return ly
+
+    @property
+    def label_index(self) -> int:
+        return self._label_index
+
+
+class RecurrentClassifierDefaults(ClassifierDefaults):
+    def __init__(self):
+        super(RecurrentClassifierDefaults, self).__init__()
+        self.set_dense(True)
+        self.set_recurrent_batch_norm(False)
+
+    def set_dense(self, dense: bool):
+        self.set('rec_body_dense', dense)
+
+    def set_recurrent_batch_norm(self, flag: bool) -> None:
+        """Define if a batch norm layer will be added before the final hidden layer.
+
+        :return: None
+        """
+        self.set('rec_batch_norm', flag)
+
+
+class RecurrentFraudClassifier(BinaryClassifier):
+    _node_types = ['LSTM', 'GRU']
+
+    def _val_node_type(self, node_type: str):
+        if node_type not in self._node_types:
+            raise PyTorchModelException(
+                f'Node type must be one of <{self._node_types}>. Got <{node_type}>'
+            )
+
+    def __init__(self, tensor_def: TensorDefinition, node_type: str, recurrent_features: int, recurrent_layers: int,
+                 linear_layers: List[int], defaults=RecurrentClassifierDefaults()):
+        self._val_node_type(node_type)
+        self._t_def = tensor_def
+        self._node_type = node_type
+        self._recurrent_features = recurrent_features
+        self._recurrent_layers = recurrent_layers
+        self._dense = True
+        self._label_index = self._t_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        super(RecurrentFraudClassifier, self).__init__(tensor_def, linear_layers, defaults)
+
+    def init_head(self) -> _Layer:
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        return TensorDefinitionHead(self._t_def, do, mn, mx)
+
+    def init_body(self) -> Union[_Layer, None]:
+        dense = self.defaults.get_bool('rec_body_dense')
+        batch_norm = self.defaults.get_bool('rec_batch_norm')
+        if self._node_type == 'LSTM':
+            return LSTMBody(
+                self.head.output_size, self._recurrent_features, self._recurrent_layers, dense, batch_norm
+            )
+        else:
+            return GRUBody(
+                self.head.output_size, self._recurrent_features, self._recurrent_layers, dense, batch_norm
+            )
+
+    @property
+    def label_index(self) -> int:
+        return self._label_index
+
+
+class RecurrentFraudClassifierMulti(RecurrentFraudClassifier):
+    @staticmethod
+    def _val_is_multi_head(head) -> TensorDefinitionHeadMulti:
+        if not isinstance(head, TensorDefinitionHeadMulti):
+            raise PyTorchModelException(
+                f'Internal exception. The Head should have been a TensorDefinitionHeadMulti. Got {type(head)}'
+            )
+        else:
+            return head
+
+    def __init__(self, tensor_def: TensorDefinitionMulti, node_type: str, recurrent_features: int,
+                 recurrent_layers: int, linear_layers: List[int], defaults=RecurrentClassifierDefaults()):
+        self._t_def_m = tensor_def
+        super(RecurrentFraudClassifierMulti, self).__init__(
+            tensor_def.label_tensor_definition, node_type, recurrent_features, recurrent_layers, linear_layers, defaults
+        )
+        self._label_index = NumpyListDataSetMulti.label_index(tensor_def)
+
+    def init_head(self) -> _Layer:
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        return TensorDefinitionHeadMulti(self._t_def_m, do, mn, mx)
+
+    def init_body(self) -> _Layer:
+        dense = self.defaults.get_bool('rec_body_dense')
+        batch_norm = self.defaults.get_bool('rec_batch_norm')
+        head = RecurrentFraudClassifierMulti._val_is_multi_head(self.head)
+        lys = []
+        for td, hs in zip(self._t_def_m.tensor_definitions, [h.output_size for h in head.heads]):
+            # Only Rank 3 Tensor Definition are Series
+            if td.rank == 3:
+                if self._node_type == 'LSTM':
+                    lys.append(LSTMBody(hs, self._recurrent_features, self._recurrent_layers, dense, batch_norm))
+                elif self._node_type == 'GRU':
+                    lys.append(GRUBody(hs, self._recurrent_features, self._recurrent_layers, dense, batch_norm))
+            else:
+                lys.append(None)
+        return BodyMulti(self.head, lys)
 
     @property
     def label_index(self) -> int:

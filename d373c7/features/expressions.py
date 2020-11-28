@@ -63,11 +63,11 @@ class FeatureExpression(Feature):
 
     @property
     def learning_category(self) -> LearningCategory:
-        if self.type == FeatureTypeBool:
+        if isinstance(self.type, FeatureTypeBool):
             return LEARNING_CATEGORY_BINARY
-        elif self.type == FeatureTypeFloat:
+        elif isinstance(self.type, FeatureTypeFloat):
             return LEARNING_CATEGORY_CONTINUOUS
-        elif self.type == FeatureTypeInteger:
+        elif isinstance(self.type, FeatureTypeInteger):
             return LEARNING_CATEGORY_CATEGORICAL
         else:
             return LEARNING_CATEGORY_NONE
