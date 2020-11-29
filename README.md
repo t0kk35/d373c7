@@ -18,7 +18,12 @@ Deep Neural Nets are data hungry beasts; they require a lot of data to train. In
 
 But no stress; some creative use of data augmentation, auto-encoders, transfer learning, semi-supervised learning should be able to alleviate some of these challenges. Should be fun trying to figure out how ...
 
---- 
+## Exmples
+This repo contains a set of examples in the [Notebooks](https://github.com/t0kk35/d373c7/notebooks) section. They are a good place to start and get a feel for what can be achieved with Neural Networks. The sub-directories and notebooks follow a numbering scheme and are like the chapters in a book. If followed they try to convey a story. (The notebooks can be opened directly in GitHub, you sometimes need to click 'Reload' a couple of times ...)
+
+Most examples use the [banksim1](https://www.kaggle.com/ntnu-testimon/banksim1) data-set. It is a fairly limited and simple data-set but has the advantage it is not PCA'ed. A lot of the public sample data for Fraud and Credit Card Fraud are PCA'ed, which makes them less usefull to show-off Neural Nets. Finding the fraud in this data-set is not complicated at all, if anything it should show the potential architectures. In order to actually compare performance a more complex and bigger data-set would be needed.
+
+---
 Under __Heavy__ Construction
 ---
 License: Under Apache 2.0 See [License](./LICENSE)
