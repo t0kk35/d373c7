@@ -56,8 +56,8 @@ class SingleLabelBCELoss(_LossBase):
 class MultiLabelBCELoss(_LossBase):
     def __init__(self, tensor_def: TensorDefinition, reduction='mean'):
         _LossBase.__init__(self, nn.BCELoss, reduction)
-        self._cat_features = [f for f in tensor_def.categorical_features() if isinstance(f, FeatureCategorical)]
-        self._sizes = [len(f)+1 for f in self._cat_features]
+        cat_features = [f for f in tensor_def.categorical_features() if isinstance(f, FeatureCategorical)]
+        self._sizes = [len(f)+1 for f in cat_features]
 
     def __call__(self, *args, **kwargs):
         pr = torch.squeeze(args[0])

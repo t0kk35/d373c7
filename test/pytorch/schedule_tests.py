@@ -89,6 +89,55 @@ class TestLRHistory(unittest.TestCase):
         self.assertEqual(len(h[history.lr_key]), 1, f'Should be a list of 1. Got {len(h[history.loss_key])}')
         self.assertEqual(h[history.loss_key][0], loss, f'First element should not the loss {h[history.loss_key][0]}')
         self.assertEqual(h[history.lr_key][0], o.lr, f'First element should have been the lr {h[history.lr_key][0]}')
+        self.assertEqual(history.early_break(), False, f'Early Break should have been False')
+        history.start_step()
+        self.assertEqual(history.epoch, 1, f'Epoch should still be 1. Got {history.epoch}')
+        self.assertEqual(history.step, 2, f'Step should have been 2. Got {history.step}')
+        self.assertEqual(history.early_break(), False, f'Early Break should have been False')
+        with self.assertRaises(NotImplementedError):
+            history.end_epoch()
+
+    def test_early_break_diverge(self):
+        bs = 1
+        m = TestNN()
+        o = AdamWOptimizer(m, 10e-2)
+        s = LinearLR(10e-1, 100, o)
+        t = torch.Tensor([[0.0, 0.1], [0.2, 0.3]])
+        ds = data.TensorDataset(t)
+        dl = data.DataLoader(ds, batch_size=bs)
+        loss = 0.5
+        diverge = 5
+        # Smooth set to 1 for ease of testing
+        history = LRHistory(dl, s, diverge, 1, 20)
+        history.start_epoch()
+        history.start_step()
+        history.end_step(torch.Tensor([1]), [torch.Tensor([1])], torch.Tensor([loss]))
+        self.assertEqual(history.early_break(), False, f'Early Break should have been false')
+        history.start_step()
+        history.end_step(torch.Tensor([1]), [torch.Tensor([1])], torch.Tensor([loss * (diverge - 0.01)]))
+        self.assertEqual(history.early_break(), False, f'Early Break should have been false')
+        history.start_step()
+        history.end_step(torch.Tensor([1]), [torch.Tensor([1])], torch.Tensor([(loss * diverge) + 0.01]))
+        self.assertEqual(history.early_break(), True, f'Early Break should have been false')
+
+    def test_early_break_max_steps(self):
+        bs = 1
+        m = TestNN()
+        o = AdamWOptimizer(m, 10e-2)
+        s = LinearLR(10e-1, 100, o)
+        t = torch.Tensor([[0.0, 0.1], [0.2, 0.3]])
+        ds = data.TensorDataset(t)
+        dl = data.DataLoader(ds, batch_size=bs)
+        loss = 0.5
+        diverge = 5
+        history = LRHistory(dl, s, diverge, 0.1, 2)
+        history.start_epoch()
+        history.start_step()
+        history.end_step(torch.Tensor([1]), [torch.Tensor([1])], torch.Tensor([loss]))
+        self.assertEqual(history.early_break(), False, f'Early Break should have been false')
+        history.start_step()
+        history.end_step(torch.Tensor([1]), [torch.Tensor([1])], torch.Tensor([loss]))
+        self.assertEqual(history.early_break(), True, f'Early Break should have been True')
 
 
 def main():

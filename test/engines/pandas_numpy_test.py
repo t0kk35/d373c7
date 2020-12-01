@@ -358,6 +358,7 @@ class TestFeatureBin(unittest.TestCase):
             self.assertEqual(fb.number_of_bins, len(bin_v), f'Number of bins changed {fb.number_of_bins}')
             self.assertEqual(td.inference_ready, True, f'Tensor should still be ready for inference')
             self.assertEqual(df[bin_name][0], 0, f'Missing row should have been in 0 bin {df[bin_name][0]}')
+            # TODO Check binning.... Missing values seem to go to 0 bin?
             self.assertEqual(df[bin_name].iloc[-1], nr_bins, f'Last should have max bin {df[bin_name].iloc[-1]}')
 
 
@@ -424,8 +425,8 @@ class TestToNumpy(unittest.TestCase):
                 if lc == ft.LEARNING_CATEGORY_CONTINUOUS:
                     self.assertEqual(l.min(initial=1000), df[fa.name].min(), f'Min do not match {l.min(initial=1000)}')
                     self.assertEqual(l.max(initial=0), df[fa.name].max(), f'Max do not match {l.max(initial=0)}')
-                    # TODO check numpy std <> panda's std?
-                    # self.assertEqual(l.std(), df[fa.name].std(), f'Std do not match {l.std()}')
+                    # Numpy Uses ddof=0 by default.
+                    self.assertEqual(l.std(), df[fa.name].std(ddof=False), f'Std do not match {l.std()}')
                 elif lc == ft.FEATURE_TYPE_CATEGORICAL:
                     self.assertEqual(l.min(initial=100), min(fi.dictionary.values()), f'Min wrong {l.min(initial=100)}')
                     self.assertEqual(l.max(initial=0), max(fi.dictionary.values()), f'Max wrong {l.max(initial=0)}')

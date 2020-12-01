@@ -92,6 +92,13 @@ class NumpyList:
                 f'TensorDefinition <{tensor_def.name} should only have one label feature>'
             )
 
+    def _val_is_built_from(self, tensor_def: TensorDefinition):
+        if not self.is_built_from(tensor_def):
+            raise NumpyListException(
+                f'Looks like this Numpy list was not built from Tensor Definition <{tensor_def.name}>. ' +
+                f'Check log for details.'
+            )
+
     def __init__(self, numpy_list: List[np.array]):
         NumpyList._val_all_same_0_dim(numpy_list)
         self._numpy_list = numpy_list
@@ -222,7 +229,7 @@ class NumpyList:
         :param label: The label value (class) we want to filter.
         :return: New filtered numpy list, filtered on the label value
         """
-        NumpyList.is_built_from(self, tensor_def)
+        self._val_is_built_from(tensor_def)
         NumpyList._val_single_label(tensor_def)
         label_index = tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
         index = np.where(self._numpy_list[label_index] == label)

@@ -57,7 +57,7 @@ class LRHistory(_History):
         self._step_count += 1
 
     def end_epoch(self):
-        raise NotImplemented('end_epoch not implemented for LR-History')
+        raise NotImplementedError('end_epoch not implemented for LR-History')
 
     def early_break(self) -> bool:
         loss_diverged = True if len(self._history[LRHistory.loss_key]) > 0 \

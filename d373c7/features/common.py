@@ -163,7 +163,8 @@ class Feature:
 
     @property
     def learning_category(self) -> LearningCategory:
-        """Get the learning category of this feature. Will drive the sort of learning operations that are available
+        """Get the learning category of this feature. Will drive the sort of learning operations that are available on
+        this feature. Learning categories are 'Continuous','Binary','Categorical' and 'Label
 
         :return: The Learning Category. An instance of 'LearningCategory'
         """

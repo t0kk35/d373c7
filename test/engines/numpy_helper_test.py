@@ -5,6 +5,9 @@ Definition of a set of Numpy Helper classes.
 import unittest
 import numpy as np
 import d373c7.engines as en
+import d373c7.features as ft
+
+FILES_DIR = './files/'
 
 
 class TestCreation(unittest.TestCase):
@@ -148,6 +151,7 @@ class TestCreation(unittest.TestCase):
         self.assertEqual((l2 == np.concatenate([y, b])).all(), True, f'Concatenate of first list failed')
 
     def test_concatenate_bad(self):
+        # Different length
         a = np.random.rand(5, 2)
         b = np.random.rand(5, 2)
         x = np.random.rand(5, 3)
@@ -159,6 +163,7 @@ class TestCreation(unittest.TestCase):
         with self.assertRaises(en.NumpyListException):
             _ = n1.concat(n2).lists
 
+        # Different dimensions
         a = np.random.rand(5, 2)
         b = np.random.rand(5, 2)
         x = np.random.rand(5, 2, 1)
@@ -170,8 +175,48 @@ class TestCreation(unittest.TestCase):
         with self.assertRaises(en.NumpyListException):
             _ = n1.concat(n2).lists
 
-    # TODO add tests for split
-    # TODO add tests for filter
+    def test_split(self):
+        length = 20
+        width = 5
+        a = np.random.rand(length, width)
+        b = np.random.rand(length, width)
+        c1 = [a, b]
+        n1 = en.NumpyList(c1)
+        # Split more data than available
+        with self.assertRaises(en.NumpyListException):
+            n1.split_time(1, length)
+        test_s, val_s = 2, 1
+        train, val, test = n1.split_time(val_s, test_s)
+        self.assertEqual(len(train.lists), len(c1), f'Number of train lists changed {len(train.lists)}')
+        self.assertEqual(len(val.lists), len(c1), f'Number of val lists changed {len(val.lists)}')
+        self.assertEqual(len(test.lists), len(c1), f'Number of test lists changed {len(test.lists)}')
+        self.assertEqual((train.lists[0].shape[1]), width, f'Width changed {train.lists[0].shape[1]}')
+        self.assertEqual((train.lists[1].shape[1]), width, f'Width changed {train.lists[1].shape[1]}')
+        self.assertEqual((val.lists[0].shape[1]), width, f'Width changed {val.lists[0].shape[1]}')
+        self.assertEqual((val.lists[1].shape[1]), width, f'Width changed {val.lists[1].shape[1]}')
+        self.assertEqual((test.lists[0].shape[1]), width, f'Width changed {test.lists[0].shape[1]}')
+        self.assertEqual((test.lists[1].shape[1]), width, f'Width changed {test.lists[1].shape[1]}')
+        self.assertEqual(len(val), val_s, f'Expected Validation to be size {val_s}. Got {len(val)}')
+        self.assertEqual(len(test), test_s, f'Expected Test to be of size {test_s}. Got {len(test)}')
+        self.assertEqual(len(train), length-val_s-test_s, f'Unexpected Length training. {length-val_s-test_s}')
+
+    def test_filter(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
+        fl = ft.FeatureLabelBinary('Fraud_Label', ff)
+        tb = ft.TensorDefinition('base-features', [fa, ff])
+        td = ft.TensorDefinition('derived-features', [fa, fl])
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(tb, file, inference=False)
+            df = e.from_df(td, df, inference=False)
+            nl = e.to_numpy_list(td, df)
+        rows = df[df['Fraud_Label'] == 0].index
+        amounts = df[df['Fraud_Label'] == 0]['Amount']
+        r = nl.filter_label(td, 0)
+        self.assertEqual(len(rows), len(r), f'Lengths do not match. Got {len(rows)}. Expected {len(r)}')
+        self.assertNotIn(1, list(r.lists[1]), f'There should not have been "1"/Fraud entries entries')
+        self.assertEqual(list(amounts), list(r.lists[0]), 'Amounts do not seem to be filtered')
 
 
 def main():

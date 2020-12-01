@@ -86,6 +86,39 @@ class TestTensorCreate(unittest.TestCase):
             _ = t.highest_precision_feature
 
 
+class TestTensorMultiCreate(unittest.TestCase):
+    def test_creation(self):
+        name_t1 = 'test-tensor-1'
+        f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
+        f2 = ft.FeatureSource('test-feature-2', ft.FEATURE_TYPE_STRING)
+        t1 = ft.TensorDefinition(name_t1, [f1, f2])
+        name_t2 = 'test-tensor-2'
+        f3 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_FLOAT)
+        f4 = ft.FeatureSource('test-feature-2', ft.FEATURE_TYPE_STRING)
+        f5 = ft.FeatureLabelBinary('test-feature-3', f3)
+        t2 = ft.TensorDefinition(name_t2, [f3, f4, f5])
+        t3 = ft.TensorDefinitionMulti([t1, t2])
+        self.assertIsInstance(t3, ft.TensorDefinitionMulti, f'Creation failed. Not correct type {type(t3)}')
+        t4, t5 = t3.tensor_definitions
+        self.assertEqual(t1, t4, f'First Tensor Def don not match {t1.name} {t4.name}')
+        self.assertEqual(t2, t5, f'Second Tensor Def don not match {t1.name} {t5.name}')
+        self.assertEqual(t3.label_tensor_definition, t2, f'That is not the tensor def with the label')
+
+    def test_creation_bad(self):
+        name_t1 = 'test-tensor-1'
+        f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_FLOAT)
+        f2 = ft.FeatureLabelBinary('test-feature-3', f1)
+        t1 = ft.TensorDefinition(name_t1, [f1, f2])
+        name_t2 = 'test-tensor-2'
+        f3 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_FLOAT)
+        f4 = ft.FeatureSource('test-feature-2', ft.FEATURE_TYPE_STRING)
+        f5 = ft.FeatureLabelBinary('test-feature-3', f3)
+        t2 = ft.TensorDefinition(name_t2, [f3, f4, f5])
+        # 2 TensorDefinitions with labels
+        with self.assertRaises(ft.TensorDefinitionException):
+            _ = ft.TensorDefinitionMulti([t1, t2])
+
+
 def main():
     unittest.main()
 

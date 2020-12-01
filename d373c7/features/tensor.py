@@ -7,7 +7,7 @@ from .common import LEARNING_CATEGORY_CONTINUOUS
 from .common import FeatureTypeNumerical, FeatureInferenceAttributes
 from .base import Feature, FeatureIndex
 from .expanders import FeatureOneHot, FeatureExpander
-from typing import List
+from typing import List, Union
 
 LEARNING_CATEGORIES = [
     LEARNING_CATEGORY_BINARY,
@@ -247,18 +247,31 @@ class TensorDefinitionMulti:
     Args:
         tensor_def: List of TensorDefinitions to be bundled in the Multi-Head Tensor Definition.
     """
+    @staticmethod
+    def _val_max_one_def_with_label(tensor_def: List[TensorDefinition]):
+        tds = [td for td in tensor_def if LEARNING_CATEGORY_LABEL in td.learning_categories]
+        if len(tds) > 1:
+            raise TensorDefinitionException(
+                f'A TensorDefinitionMulti should only have one embedded TensorDefinition with Labels. ' +
+                f'These TensorDefinitions had a label {[td.name for td in tds]}'
+            )
+
     def __init__(self, tensor_def: List[TensorDefinition]):
-        self.tensor_def = tensor_def
+        TensorDefinitionMulti._val_max_one_def_with_label(tensor_def)
+        self._tensor_def = tensor_def
 
     @property
     def tensor_definitions(self) -> List[TensorDefinition]:
-        return self.tensor_def
+        return self._tensor_def
 
     @property
-    def label_tensor_definition(self) -> TensorDefinition:
+    def label_tensor_definition(self) -> Union[TensorDefinition, None]:
         """Returns the TensorDefinition out of the various TensorDefinition that has the labels.
 
         :return: The TensorDefinition has contains the labels
         """
-        td = [td for td in self.tensor_definitions if LEARNING_CATEGORY_LABEL in td.learning_categories]
-        return td[0]
+        tds = [td for td in self.tensor_definitions if LEARNING_CATEGORY_LABEL in td.learning_categories]
+        if len(tds) == 0:
+            return None
+        else:
+            return tds[0]

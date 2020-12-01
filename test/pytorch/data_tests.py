@@ -16,25 +16,25 @@ FILES_DIR = './files/'
 class TestNumpyDataSet(unittest.TestCase):
     """Numpy Dataset test cases
     """
+    fraud = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_INT_8)
     s_features = [
         ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT),
         ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING),
         ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL),
         ft.FeatureSource('Country', ft.FEATURE_TYPE_CATEGORICAL),
-        ft.FeatureSource('Fraud', ft.FEATURE_TYPE_INT_8)
+        fraud
     ]
     d_features = [
         ft.FeatureNormalizeScale('Amount_Scale', ft.FEATURE_TYPE_FLOAT_32, s_features[0]),
         ft.FeatureOneHot('MCC_OH', s_features[2]),
         ft.FeatureIndex('Country_Index', ft.FEATURE_TYPE_INT_16, s_features[3]),
-        ft.FeatureSource('Fraud', ft.FEATURE_TYPE_INT_8)
+        ft.FeatureLabelBinary('Fraud', fraud)
     ]
 
     def test_creation_base(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         tdb = ft.TensorDefinition('Base', self.s_features)
         tdd = ft.TensorDefinition('Derived', self.d_features)
-        tdd.set_label(self.d_features[-1])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(tdb, file, inference=False)
             df = e.from_df(tdd, df, inference=False)
@@ -58,7 +58,6 @@ class TestNumpyDataSet(unittest.TestCase):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         tdb = ft.TensorDefinition('Base', self.s_features)
         tdd = ft.TensorDefinition('Derived', self.d_features)
-        tdd.set_label(self.d_features[-1])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(tdb, file, inference=False)
             df = e.from_df(tdd, df, inference=False)
@@ -72,7 +71,6 @@ class TestNumpyDataSet(unittest.TestCase):
         bs = 3
         tdb = ft.TensorDefinition('Base', self.s_features)
         tdd = ft.TensorDefinition('Derived', self.d_features)
-        tdd.set_label(self.d_features[-1])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(tdb, file, inference=False)
             df = e.from_df(tdd, df, inference=False)
@@ -92,25 +90,25 @@ class TestNumpyDataSet(unittest.TestCase):
 class TestClassSampler(unittest.TestCase):
     """Class Sampler test cases
     """
+    fraud = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_INT_8)
     s_features = [
         ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT),
         ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING),
         ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL),
         ft.FeatureSource('Country', ft.FEATURE_TYPE_CATEGORICAL),
-        ft.FeatureSource('Fraud', ft.FEATURE_TYPE_INT_8)
+        fraud
     ]
     d_features = [
         ft.FeatureNormalizeScale('Amount_Scale', ft.FEATURE_TYPE_FLOAT_32, s_features[0]),
         ft.FeatureOneHot('MCC_OH', s_features[2]),
         ft.FeatureIndex('Country_Index', ft.FEATURE_TYPE_INT_16, s_features[3]),
-        ft.FeatureSource('Fraud', ft.FEATURE_TYPE_INT_8)
+        ft.FeatureLabelBinary('Fraud', fraud)
     ]
 
     def test_creation_base(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         tdb = ft.TensorDefinition('Base', self.s_features)
         tdd = ft.TensorDefinition('Derived', self.d_features)
-        tdd.set_label(self.d_features[-1])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(tdb, file, inference=False)
             df = e.from_df(tdd, df, inference=False)
@@ -126,7 +124,6 @@ class TestClassSampler(unittest.TestCase):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         tdb = ft.TensorDefinition('Base', self.s_features)
         tdd = ft.TensorDefinition('Derived', self.d_features)
-        tdd.set_label(self.d_features[-1])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(tdb, file, inference=False)
             df = e.from_df(tdd, df, inference=False)
