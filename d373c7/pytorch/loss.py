@@ -4,6 +4,7 @@ Imports for Pytorch data
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as nnf
 # noinspection PyProtectedMember
 from torch.nn.modules.loss import _Loss as TorchLoss
 from ..features import TensorDefinition, FeatureCategorical
@@ -61,13 +62,13 @@ class MultiLabelBCELoss(_LossBase):
 
     def __call__(self, *args, **kwargs):
         pr = torch.squeeze(args[0])
-        lb = [nn.functional.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
+        lb = [nnf.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
         loss = self.train_loss(pr, torch.cat(lb, dim=1))
         return loss
 
     def score(self, *args, **kwargs) -> torch.Tensor:
         pr = torch.squeeze(args[0])
-        lb = [nn.functional.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
+        lb = [nnf.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
         lb = torch.cat(lb, dim=1)
         score = self.score_loss(pr, lb)
         score = self.score_aggregator(score, dim=1)

@@ -350,6 +350,8 @@ class EnginePandasNumpy(EngineContext):
             n.append(npy)
 
         npl = NumpyList(n)
+        # Don't forget to set the shapes.
+        tensor_def.shapes = [(-1, *s[1:]) for s in npl.shapes]
         return npl
 
     def multi_to_numpy_list(self, tensor_def: TensorDefinitionMulti, df: [pd.DataFrame]) -> NumpyList:
@@ -500,8 +502,9 @@ class EnginePandasNumpy(EngineContext):
         logger.info(f'Returning series of types {[str(s.dtype) for s in series]}.')
         # Turn it into a NumpyList
         series = NumpyList(series)
-        # Don't forget to set the Rank.
+        # Don't forget to set the Rank and shape
         tensor_def.rank = 3
+        tensor_def.shapes = [(-1, *s[1:]) for s in series.shapes]
         logger.info(f'Done creating {tensor_def.name}. Shapes={series.shapes}')
         return series
 

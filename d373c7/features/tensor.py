@@ -7,7 +7,7 @@ from .common import LEARNING_CATEGORY_CONTINUOUS
 from .common import FeatureTypeNumerical, FeatureInferenceAttributes
 from .base import Feature, FeatureIndex
 from .expanders import FeatureOneHot, FeatureExpander
-from typing import List, Union
+from typing import List, Union, Tuple
 
 LEARNING_CATEGORIES = [
     LEARNING_CATEGORY_BINARY,
@@ -38,7 +38,22 @@ class TensorDefinition:
     def _val_rank_set(self):
         if self._rank is None:
             raise TensorDefinitionException(
-                f'The Rank of Tensor Definition <{self.name}> has not been set. Can not retrieve it'
+                f'The Rank of Tensor Definition <{self.name}> has not been set. Can not retrieve it. Maybe ' +
+                f'it needs to be used in a run with no "Inference"'
+            )
+
+    def _val_shapes_set(self):
+        if self._shapes is None:
+            raise TensorDefinitionException(
+                f'The Shape of Tensor Definition <{self.name}> has not been set. Can not retrieve it. Maybe ' +
+                f'it needs to be used in a run with no "Inference"'
+            )
+
+    def _val_shapes_match_lcs(self, shapes: List[Tuple[int, ...]]):
+        if len(shapes) != len(self.learning_categories):
+            raise TensorDefinitionException(
+                f'The number of shapes <{len(shapes)}> is not the same as the number of learning categories for ' +
+                f'this TensorDefinition <{self.learning_categories}>'
             )
 
     def _val_duplicate_entries(self):
@@ -78,6 +93,7 @@ class TensorDefinition:
     def __init__(self, name: str, features: List[Feature] = None):
         self._name = name
         self._rank = None
+        self._shapes = None
         if features is None:
             self._feature_list = []
         else:
@@ -116,6 +132,28 @@ class TensorDefinition:
         :return: None
         """
         self._rank = rank
+
+    @property
+    def shapes(self) -> List[Tuple[int, ...]]:
+        """Returns the 'expected' shape of this TensorDefinition. The Shape is only known after the Tensor Definition
+        has been used to build a Numpy List.
+        Because a Tensor definition can not know the batch size, the first dimension is *hard-coded to -1*.
+
+        :return: A List of int Tuples. There will be a tuple per each learning category. The tuples will contain an int
+        for each dimension, each int is the size along that dimension.
+        """
+        self._val_shapes_set()
+        return self._shapes
+
+    @shapes.setter
+    def shapes(self, shapes: List[Tuple[int, ...]]):
+        """Shape setter.
+
+        :param shapes: A Tuple of ints describing the length along the various dimensions.
+        :return: None
+        """
+        self._val_shapes_match_lcs(shapes)
+        self._shapes = shapes
 
     @property
     def features(self) -> List[Feature]:

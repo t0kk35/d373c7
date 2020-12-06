@@ -4,7 +4,7 @@ Imports for Pytorch data
 """
 import logging
 import torch
-from torch.utils.data import Dataset, DataLoader, Sampler
+import torch.utils.data as data
 from ..features.common import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL
 from ..features.common import LEARNING_CATEGORY_LABEL
 from ..features.tensor import TensorDefinition, TensorDefinitionMulti
@@ -38,7 +38,7 @@ class _DTypeHelper:
         return dtypes
 
 
-class _BaseNumpyListDataSet(Dataset):
+class _BaseNumpyListDataSet(data.Dataset):
     @staticmethod
     def _val_built_from(npl: NumpyList, tensor_definition: TensorDefinition):
         if not npl.is_built_from(tensor_definition):
@@ -62,7 +62,7 @@ class _BaseNumpyListDataSet(Dataset):
         return res
 
     def data_loader(self, device: torch.device, batch_size: int, num_workers: int = 1,
-                    shuffle: bool = False, sampler: Sampler = None) -> DataLoader:
+                    shuffle: bool = False, sampler: data.Sampler = None) -> data.DataLoader:
         """Create a Pytorch Data-loader for the underlying Data-set.
 
         :param device: The Pytorch device on which to create the data. Either CPU or GPU. Note that if the the device is
@@ -80,14 +80,14 @@ class _BaseNumpyListDataSet(Dataset):
                 logger.warning(f'Defaulted to using the cpu for the data-loader of <{self.names}>.' +
                                f' Multiple workers not supported by "cuda" devices. ')
             self.device = torch.device('cpu')
-            dl = DataLoader(
+            dl = data.DataLoader(
                 self, num_workers=num_workers, batch_size=batch_size, shuffle=shuffle, pin_memory=True, sampler=sampler
             )
         else:
             # Only CPU Tensors can be pinned
             pin = False if device.type == 'cuda' else True
             self.device = device
-            dl = DataLoader(self, batch_size=batch_size, shuffle=shuffle, pin_memory=pin, sampler=sampler)
+            dl = data.DataLoader(self, batch_size=batch_size, shuffle=shuffle, pin_memory=pin, sampler=sampler)
         return dl
 
 
@@ -151,7 +151,7 @@ class ClassSampler:
         self._npl = npl
         self._tensor_def = tensor_definition
 
-    def over_sampler(self, replacement=True) -> Sampler:
+    def over_sampler(self, replacement=True) -> data.Sampler:
         """Create a RandomWeightedSampler that balances out the classes. It'll more or less return an equal amount of
         each class. For a binary fraud label this would mean about as much fraud as non-fraud samples.
 

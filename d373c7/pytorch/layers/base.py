@@ -4,10 +4,12 @@ Module for common layers
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as nnf
 from .common import _Layer, PyTorchLayerException
 from ...features.tensor import TensorDefinition, TensorDefinitionMulti
 from ...features.common import LEARNING_CATEGORY_BINARY, FeatureCategorical
 from ...features import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL
+from math import sqrt
 from typing import List, Tuple
 
 
@@ -237,3 +239,50 @@ class TensorDefinitionHeadMulti(_Layer):
 
     def extra_repr(self) -> str:
         return f'Embedded TDs={[td.name for td in self.tensor_definition.tensor_definitions]}'
+
+
+class AttentionLastEntry(_Layer):
+    def __init__(self, in_size: int, heads: int, project_size: int):
+        super(AttentionLastEntry, self).__init__()
+        self._in_size = in_size
+        self._p_size = project_size
+        self._heads = 1
+        self.k_weight = nn.parameter.Parameter(torch.zeros(1, self._p_size))
+        self.q_weight = nn.parameter.Parameter(torch.zeros(1, self._p_size))
+        # self.v_weight = nn.parameter.Parameter(torch.zeros(1, self._p_size))
+        self.reset_parameters()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Apply weights to the input for key
+        k = torch.einsum('bsfi,ip->bsp', torch.unsqueeze(x, dim=3), self.k_weight)
+        # Use last entry of the series as query and apply weights
+        q = torch.einsum('bfi,ip->bp', torch.unsqueeze(x[:, -1, :], dim=2), self.q_weight)
+        # Dot product the each entry with the last entry
+        w = torch.einsum('bsk,bq->bs', k, q)
+        # Softmax along the series axis. Un-squeeze to make broadcast possible.
+        w = torch.unsqueeze(nnf.softmax(w, dim=1), dim=2)
+        # Multiply each entry with the weights.
+        x = torch.mul(x, w)
+        return x
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.k_weight, a=sqrt(5))
+        nn.init.kaiming_uniform_(self.q_weight, a=sqrt(5))
+        # nn.init.kaiming_uniform_(self.v_weight, a=sqrt(5))
+
+
+class Attention(_Layer):
+    def __init__(self, in_size: int, heads: int, dropout: float):
+        super(Attention, self).__init__()
+        self._in_size = in_size
+        self.attn = nn.MultiheadAttention(in_size, heads, dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Multi-Head attention expects the batch to be the second dim. (Series, Batch, Feature). Need to transpose
+        x = x.transpose(0, 1)
+        x, _ = self.attn(x, x, x, need_weights=False)
+        return x.transpose(0, 1)
+
+    @property
+    def output_size(self) -> int:
+        return self._in_size

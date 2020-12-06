@@ -6,8 +6,8 @@ import logging
 import torch
 import torch.nn as nn
 from .common import _LossBase, PyTorchModelException, ModelDefaults, _History, _Model
-from ..layers import SingleClassBinaryOutput, LinDropAct, TensorDefinitionHead, TensorDefinitionHeadMulti
-from ..layers import LSTMBody, GRUBody, BodyMulti
+from ..layers import SingleClassBinaryOutput, LinDropAct, TensorDefinitionHead, TensorDefinitionHeadMulti, Attention
+from ..layers import LSTMBody, GRUBody, BodyMulti, BodySequential, ConvolutionalBody1d, AttentionLastEntry
 # noinspection PyProtectedMember
 from ..layers.common import _Layer
 from ..optimizer import _Optimizer, AdamWOptimizer
@@ -15,7 +15,7 @@ from ..loss import SingleLabelBCELoss
 from ..data import NumpyListDataSetMulti
 from ...features import TensorDefinition, TensorDefinitionMulti, LEARNING_CATEGORY_LABEL, FeatureLabelBinary
 from ...features import FeatureCategorical
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Tuple
 
 
 logger = logging.getLogger(__name__)
@@ -137,6 +137,15 @@ class BinaryClassifier(_Model):
                 f'The LEARNING_CATEGORY_LABEL feature of a Tensor Definition must be of type' +
                 f'{FeatureLabelBinary.__class__.__name__} '
             )
+
+    @staticmethod
+    def _val_is_multi_head(head) -> TensorDefinitionHeadMulti:
+        if not isinstance(head, TensorDefinitionHeadMulti):
+            raise PyTorchModelException(
+                f'Internal exception. The Head should have been a TensorDefinitionHeadMulti. Got {type(head)}'
+            )
+        else:
+            return head
 
     def __init__(self, tensor_def: TensorDefinition, layers: List[int], defaults: ClassifierDefaults):
         super(BinaryClassifier, self).__init__(defaults)
@@ -271,6 +280,8 @@ class RecurrentClassifierDefaults(ClassifierDefaults):
         super(RecurrentClassifierDefaults, self).__init__()
         self.set_dense(True)
         self.set_recurrent_batch_norm(False)
+        self.set_attention_heads(0)
+        self.set_attention_dropout(0.1)
 
     def set_dense(self, dense: bool):
         self.set('rec_body_dense', dense)
@@ -281,6 +292,21 @@ class RecurrentClassifierDefaults(ClassifierDefaults):
         :return: None
         """
         self.set('rec_batch_norm', flag)
+
+    def set_attention_heads(self, heads: int):
+        """Define the number of attention heads to be used in the self-attention layers. 0 means self-attention is
+        switched off.
+
+        :return: None
+        """
+        self.set('rec_attention_heads', heads)
+
+    def set_attention_dropout(self, dropout: float):
+        """Define the dropout to be used in the attention layers.
+
+        :return: None
+        """
+        self.set('rec_attention_dropout', dropout)
 
 
 class RecurrentFraudClassifier(BinaryClassifier):
@@ -312,14 +338,19 @@ class RecurrentFraudClassifier(BinaryClassifier):
     def init_body(self) -> Union[_Layer, None]:
         dense = self.defaults.get_bool('rec_body_dense')
         batch_norm = self.defaults.get_bool('rec_batch_norm')
+        attn_heads = self.defaults.get_int('rec_attention_heads')
+        attn_do = self.defaults.get_float('rec_attention_dropout')
         if self._node_type == 'LSTM':
-            return LSTMBody(
-                self.head.output_size, self._recurrent_features, self._recurrent_layers, dense, batch_norm
-            )
+            rnn = LSTMBody(self.head.output_size, self._recurrent_features, self._recurrent_layers, dense, batch_norm)
         else:
-            return GRUBody(
-                self.head.output_size, self._recurrent_features, self._recurrent_layers, dense, batch_norm
-            )
+            rnn = GRUBody(self.head.output_size, self._recurrent_features, self._recurrent_layers, dense, batch_norm)
+        # Add attention if needed
+        if attn_heads != 0:
+            # attn = Attention(self.head.output_size, attn_heads, attn_do)
+            attn = AttentionLastEntry(0, 1, 32)
+            return BodySequential(self.head.output_size, [attn, rnn])
+        else:
+            return rnn
 
     @property
     def label_index(self) -> int:
@@ -327,15 +358,6 @@ class RecurrentFraudClassifier(BinaryClassifier):
 
 
 class RecurrentFraudClassifierMulti(RecurrentFraudClassifier):
-    @staticmethod
-    def _val_is_multi_head(head) -> TensorDefinitionHeadMulti:
-        if not isinstance(head, TensorDefinitionHeadMulti):
-            raise PyTorchModelException(
-                f'Internal exception. The Head should have been a TensorDefinitionHeadMulti. Got {type(head)}'
-            )
-        else:
-            return head
-
     def __init__(self, tensor_def: TensorDefinitionMulti, node_type: str, recurrent_features: int,
                  recurrent_layers: int, linear_layers: List[int], defaults=RecurrentClassifierDefaults()):
         self._t_def_m = tensor_def
@@ -353,15 +375,99 @@ class RecurrentFraudClassifierMulti(RecurrentFraudClassifier):
     def init_body(self) -> _Layer:
         dense = self.defaults.get_bool('rec_body_dense')
         batch_norm = self.defaults.get_bool('rec_batch_norm')
+        attn_heads = self.defaults.get_int('rec_attention_heads')
+        attn_do = self.defaults.get_float('rec_attention_dropout')
         head = RecurrentFraudClassifierMulti._val_is_multi_head(self.head)
         lys = []
         for td, hs in zip(self._t_def_m.tensor_definitions, [h.output_size for h in head.heads]):
             # Only Rank 3 Tensor Definition are Series
             if td.rank == 3:
+                # Add attention if needed
                 if self._node_type == 'LSTM':
-                    lys.append(LSTMBody(hs, self._recurrent_features, self._recurrent_layers, dense, batch_norm))
-                elif self._node_type == 'GRU':
-                    lys.append(GRUBody(hs, self._recurrent_features, self._recurrent_layers, dense, batch_norm))
+                    rnn = LSTMBody(hs, self._recurrent_features, self._recurrent_layers, dense, batch_norm)
+                else:
+                    rnn = GRUBody(hs, self._recurrent_features, self._recurrent_layers, dense, batch_norm)
+                if attn_heads != 0:
+                    # attn = Attention(self.head.output_size, attn_heads, attn_do)
+                    attn = AttentionLastEntry(0, 1, 32)
+                    seq = BodySequential(hs, [attn, rnn])
+                    lys.append(seq)
+                else:
+                    lys.append(rnn)
+            else:
+                lys.append(None)
+        return BodyMulti(self.head, lys)
+
+    @property
+    def label_index(self) -> int:
+        return self._label_index
+
+
+class ConvolutionalClassifierDefaults(ClassifierDefaults):
+    def __init__(self):
+        super(ConvolutionalClassifierDefaults, self).__init__()
+        self.set_dense(True)
+        self.set_conv_dropout(0.1)
+
+    def set_dense(self, dense: bool):
+        self.set('conv_body_dense', dense)
+
+    def set_conv_dropout(self, dropout: float):
+        self.set('conv_dropout', dropout)
+
+
+class ConvolutionalFraudClassifier(BinaryClassifier):
+    def __init__(self, tensor_def: TensorDefinition, conv_layers: List[Tuple[int, int, int]],
+                 linear_layers: List[int], defaults=ConvolutionalClassifierDefaults()):
+        self._t_def = tensor_def
+        self._conv_layers = conv_layers
+        self._label_index = self._t_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        super(ConvolutionalFraudClassifier, self).__init__(tensor_def, linear_layers, defaults)
+
+    def init_head(self) -> _Layer:
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        return TensorDefinitionHead(self._t_def, do, mn, mx)
+
+    def init_body(self) -> Union[_Layer, None]:
+        do = self.defaults.get_float('conv_dropout')
+        dense = self.defaults.get_bool('conv_body_dense')
+        # Get the length of the series, it is the second dimension of the shape.
+        s_length = [s[1] for s in self._t_def.shapes if len(s) == 3][0]
+        return ConvolutionalBody1d(self.head.output_size, s_length, self._conv_layers, do, dense)
+
+    @property
+    def label_index(self) -> int:
+        return self._label_index
+
+
+class ConvolutionalFraudClassifierMulti(ConvolutionalFraudClassifier):
+    def __init__(self, tensor_def: TensorDefinitionMulti, conv_layers: List[Tuple[int, int, int]],
+                 linear_layers: List[int]):
+        self._t_def_m = tensor_def
+        super(ConvolutionalFraudClassifierMulti, self).__init__(
+            tensor_def.label_tensor_definition, conv_layers, linear_layers
+        )
+        self._label_index = NumpyListDataSetMulti.label_index(tensor_def)
+
+    def init_head(self) -> _Layer:
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        return TensorDefinitionHeadMulti(self._t_def_m, do, mn, mx)
+
+    def init_body(self) -> Union[_Layer, None]:
+        do = self.defaults.get_float('conv_dropout')
+        dense = self.defaults.get_bool('conv_body_dense')
+        head = RecurrentFraudClassifierMulti._val_is_multi_head(self.head)
+        lys = []
+        for td, hs in zip(self._t_def_m.tensor_definitions, [h.output_size for h in head.heads]):
+            # Only Rank 3 Tensor Definition are Series
+            if td.rank == 3:
+                # Get the length of the series, it is the second dimension of the shape.
+                s_length = [s[1] for s in td.shapes if len(s) == 3][0]
+                lys.append(ConvolutionalBody1d(hs, s_length, self._conv_layers, do, dense))
             else:
                 lys.append(None)
         return BodyMulti(self.head, lys)

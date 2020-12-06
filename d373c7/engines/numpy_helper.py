@@ -284,26 +284,20 @@ class NumpyList:
             logger.info(f'Tensor Definition and Numpy list not compatible. Tensor Definition is not inference ready')
             return False
 
-        lc = tensor_definition.learning_categories
-
-        if len(lc) != self.number_of_lists:
-            logger.info(f'Tensor Definition and Numpy list not compatible. Expected {len(lc)} lists in the Numpy list')
+        if len(tensor_definition.learning_categories) != self.number_of_lists:
+            logger.info(f'Tensor Definition and Numpy list not compatible. Number of Arrays in List does not match ' +
+                        f'the number of Learning Categories in the Tensor Definition. ' +
+                        f'Expected {len(tensor_definition.learning_categories)} lists in the Numpy list')
             return False
 
-        # TODO Fix for Series
-        # for lc, npl in zip(lc, self.lists):
-        #     f = tensor_definition.filter_features(lc, expand=True)
-        #     if tensor_definition.rank == 2:
-        #         shape = npl.shape[1] if len(npl.shape) > 1 else 1
-        #         if len(f) != shape:
-        #             logger.info(
-        #                 f'Tensor Definition and Numpy not compatible. '
-        #                 f'Learning Type {lc.name} does not have same # elements'
-        #             )
-        #             return False
-        #     else:
-        #         logger.info(f'Tensor Definition and Numpy not compatible. Rank in definition {tensor_definition.rank}')
-        #         return False
+        for i, (s, npl) in enumerate(zip(tensor_definition.shapes, self.lists)):
+            # All except Batch dim must match
+            if s[1:] != npl.shape[1:]:
+                logger.info(
+                    f'Tensor Definition and Numpy not compatible. Expected shape {s}. Numpy has shape {np.shape} for' +
+                    f'list number <{i+1}>'
+                )
+                return False
 
         # All good if we manage to get here.
         return True
