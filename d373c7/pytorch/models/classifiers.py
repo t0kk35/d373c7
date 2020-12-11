@@ -8,6 +8,7 @@ import torch.nn as nn
 from .common import _LossBase, PyTorchModelException, ModelDefaults, _History, _Model
 from ..layers import SingleClassBinaryOutput, LinDropAct, TensorDefinitionHead, TensorDefinitionHeadMulti, Attention
 from ..layers import LSTMBody, GRUBody, BodyMulti, BodySequential, ConvolutionalBody1d, AttentionLastEntry
+from ..layers import TransformerBody
 # noinspection PyProtectedMember
 from ..layers.common import _Layer
 from ..optimizer import _Optimizer, AdamWOptimizer
@@ -347,10 +348,19 @@ class RecurrentFraudClassifier(BinaryClassifier):
         # Add attention if needed
         if attn_heads != 0:
             # attn = Attention(self.head.output_size, attn_heads, attn_do)
-            attn = AttentionLastEntry(0, 1, 32)
+            attn = AttentionLastEntry(self.head.output_size, 1, 32)
             return BodySequential(self.head.output_size, [attn, rnn])
         else:
             return rnn
+
+    def make_rnn_layer(self, input_size: int) -> _Layer:
+        dense = self.defaults.get_bool('rec_body_dense')
+        batch_norm = self.defaults.get_bool('rec_batch_norm')
+        if self._node_type == 'LSTM':
+            rnn = LSTMBody(input_size, self._recurrent_features, self._recurrent_layers, dense, batch_norm)
+        else:
+            rnn = GRUBody(input_size, self._recurrent_features, self._recurrent_layers, dense, batch_norm)
+        return rnn
 
     @property
     def label_index(self) -> int:
@@ -373,8 +383,6 @@ class RecurrentFraudClassifierMulti(RecurrentFraudClassifier):
         return TensorDefinitionHeadMulti(self._t_def_m, do, mn, mx)
 
     def init_body(self) -> _Layer:
-        dense = self.defaults.get_bool('rec_body_dense')
-        batch_norm = self.defaults.get_bool('rec_batch_norm')
         attn_heads = self.defaults.get_int('rec_attention_heads')
         attn_do = self.defaults.get_float('rec_attention_dropout')
         head = RecurrentFraudClassifierMulti._val_is_multi_head(self.head)
@@ -383,16 +391,14 @@ class RecurrentFraudClassifierMulti(RecurrentFraudClassifier):
             # Only Rank 3 Tensor Definition are Series
             if td.rank == 3:
                 # Add attention if needed
-                if self._node_type == 'LSTM':
-                    rnn = LSTMBody(hs, self._recurrent_features, self._recurrent_layers, dense, batch_norm)
-                else:
-                    rnn = GRUBody(hs, self._recurrent_features, self._recurrent_layers, dense, batch_norm)
                 if attn_heads != 0:
-                    # attn = Attention(self.head.output_size, attn_heads, attn_do)
-                    attn = AttentionLastEntry(0, 1, 32)
-                    seq = BodySequential(hs, [attn, rnn])
+                    # attn = Attention(hs, attn_heads, attn_do)
+                    attn = AttentionLastEntry(hs, 1, 32)
+                    rnn = self.make_rnn_layer(attn.output_size)
+                    seq = BodySequential(attn.output_size, [attn, rnn])
                     lys.append(seq)
                 else:
+                    rnn = self.make_rnn_layer(hs)
                     lys.append(rnn)
             else:
                 lys.append(None)
@@ -460,7 +466,7 @@ class ConvolutionalFraudClassifierMulti(ConvolutionalFraudClassifier):
     def init_body(self) -> Union[_Layer, None]:
         do = self.defaults.get_float('conv_dropout')
         dense = self.defaults.get_bool('conv_body_dense')
-        head = RecurrentFraudClassifierMulti._val_is_multi_head(self.head)
+        head = self._val_is_multi_head(self.head)
         lys = []
         for td, hs in zip(self._t_def_m.tensor_definitions, [h.output_size for h in head.heads]):
             # Only Rank 3 Tensor Definition are Series
@@ -468,6 +474,81 @@ class ConvolutionalFraudClassifierMulti(ConvolutionalFraudClassifier):
                 # Get the length of the series, it is the second dimension of the shape.
                 s_length = [s[1] for s in td.shapes if len(s) == 3][0]
                 lys.append(ConvolutionalBody1d(hs, s_length, self._conv_layers, do, dense))
+            else:
+                lys.append(None)
+        return BodyMulti(self.head, lys)
+
+    @property
+    def label_index(self) -> int:
+        return self._label_index
+
+
+class TransformerClassifierDefaults(ClassifierDefaults):
+    def __init__(self):
+        super(TransformerClassifierDefaults, self).__init__()
+        self.set_trans_dropout(0.2)
+        self.set_trans_positional_size(16)
+
+    def set_trans_dropout(self, dropout: float):
+        self.set('trans_dropout', dropout)
+
+    def set_trans_positional_size(self, size: int):
+        self.set('trans_pos_size', size)
+
+
+class TransformerFraudClassifier(BinaryClassifier):
+    def __init__(self, tensor_def: TensorDefinition, attention_heads: int, feedforward_size: int,
+                 linear_layers: List[int], defaults=TransformerClassifierDefaults()):
+        self._t_def = tensor_def
+        self._attention_heads = attention_heads
+        self._feedforward_size = feedforward_size
+        self._label_index = self._t_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        super(TransformerFraudClassifier, self).__init__(tensor_def, linear_layers, defaults)
+
+    def init_head(self) -> _Layer:
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        return TensorDefinitionHead(self._t_def, do, mn, mx)
+
+    def init_body(self) -> Union[_Layer, None]:
+        do = self.defaults.get_float('trans_dropout')
+        ps = self.defaults.get_int('trans_pos_size')
+        series_size = [s for s in self._t_def.shapes if len(s) == 3][0][1]
+        b = TransformerBody(self.head.output_size, series_size, ps, self._attention_heads, self._feedforward_size, do)
+        return b
+
+    @property
+    def label_index(self) -> int:
+        return self._label_index
+
+
+class TransformerFraudClassifierMulti(TransformerFraudClassifier):
+    def __init__(self, tensor_def: TensorDefinitionMulti, attention_heads: int, feedforward_size: int,
+                 linear_layers: List[int], defaults=TransformerClassifierDefaults()):
+        self._t_def_m = tensor_def
+        super(TransformerFraudClassifierMulti, self).__init__(
+            tensor_def.label_tensor_definition, attention_heads, feedforward_size, linear_layers, defaults
+        )
+        self._label_index = NumpyListDataSetMulti.label_index(tensor_def)
+
+    def init_head(self) -> _Layer:
+        mn = self.defaults.get_int('emb_min_dim')
+        mx = self.defaults.get_int('emb_max_dim')
+        do = self.defaults.get_float('emb_dropout')
+        return TensorDefinitionHeadMulti(self._t_def_m, do, mn, mx)
+
+    def init_body(self) -> Union[_Layer, None]:
+        do = self.defaults.get_float('trans_dropout')
+        ps = self.defaults.get_int('trans_pos_size')
+        head = self._val_is_multi_head(self.head)
+        lys = []
+        for td, hs in zip(self._t_def_m.tensor_definitions, [h.output_size for h in head.heads]):
+            # Only Rank 3 Tensor Definition are Series
+            if td.rank == 3:
+                # Get the length of the series, it is the second dimension of the shape.
+                s_length = [s[1] for s in td.shapes if len(s) == 3][0]
+                lys.append(TransformerBody(hs, s_length, ps, self._attention_heads, self._feedforward_size, do))
             else:
                 lys.append(None)
         return BodyMulti(self.head, lys)

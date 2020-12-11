@@ -9,8 +9,8 @@ from .common import _Layer, PyTorchLayerException
 from ...features.tensor import TensorDefinition, TensorDefinitionMulti
 from ...features.common import LEARNING_CATEGORY_BINARY, FeatureCategorical
 from ...features import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL
-from math import sqrt
-from typing import List, Tuple
+from math import sqrt, log
+from typing import List, Tuple, Union
 
 
 class LinDropAct(_Layer):
@@ -247,28 +247,40 @@ class AttentionLastEntry(_Layer):
         self._in_size = in_size
         self._p_size = project_size
         self._heads = 1
-        self.k_weight = nn.parameter.Parameter(torch.zeros(1, self._p_size))
-        self.q_weight = nn.parameter.Parameter(torch.zeros(1, self._p_size))
-        # self.v_weight = nn.parameter.Parameter(torch.zeros(1, self._p_size))
+        self.k_weight = nn.parameter.Parameter(torch.zeros(self._in_size, self._p_size))
+        self.q_weight = nn.parameter.Parameter(torch.zeros(self._in_size, self._p_size))
+        self.v_weight = nn.parameter.Parameter(torch.zeros(self._in_size, self._p_size))
         self.reset_parameters()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_weights=False) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # Apply weights to the input for key
-        k = torch.einsum('bsfi,ip->bsp', torch.unsqueeze(x, dim=3), self.k_weight)
+        k = torch.matmul(x, self.k_weight)
         # Use last entry of the series as query and apply weights
-        q = torch.einsum('bfi,ip->bp', torch.unsqueeze(x[:, -1, :], dim=2), self.q_weight)
-        # Dot product the each entry with the last entry
-        w = torch.einsum('bsk,bq->bs', k, q)
-        # Softmax along the series axis. Un-squeeze to make broadcast possible.
+        q = torch.unsqueeze(torch.matmul(x[:, -1, :], self.q_weight), dim=1)
+        # Apply weight to the input for the value
+        v = torch.matmul(x, self.v_weight)
+        # Dot product each entry with the transpose of  last entry.
+        w = torch.squeeze(torch.bmm(k, q.transpose(1, 2)), dim=2)
+        # Softmax along the series axis. Un-squeeze to make broadcast possible
         w = torch.unsqueeze(nnf.softmax(w, dim=1), dim=2)
         # Multiply each entry with the weights.
-        x = torch.mul(x, w)
-        return x
+        x = torch.mul(v, w)
+        if return_weights:
+            return x, w
+        else:
+            return x
 
     def reset_parameters(self):
         nn.init.kaiming_uniform_(self.k_weight, a=sqrt(5))
         nn.init.kaiming_uniform_(self.q_weight, a=sqrt(5))
-        # nn.init.kaiming_uniform_(self.v_weight, a=sqrt(5))
+        nn.init.kaiming_uniform_(self.v_weight, a=sqrt(5))
+
+    @property
+    def output_size(self) -> int:
+        return self._p_size
+
+    def extra_repr(self) -> str:
+        return f'heads={self._heads}, hidden_size={self._p_size}'
 
 
 class Attention(_Layer):
@@ -286,3 +298,58 @@ class Attention(_Layer):
     @property
     def output_size(self) -> int:
         return self._in_size
+
+
+class PositionalEncoding(_Layer):
+    def __init__(self, in_size: int, series_size: int, positional_size: int):
+        super(PositionalEncoding, self).__init__()
+        self._series_size = series_size
+        self._positional_size = positional_size
+        # Compute the positional encodings in log space
+        pe = torch.zeros(series_size, positional_size)
+        position = torch.arange(0, series_size).unsqueeze(1)
+        d_term = torch.exp(torch.arange(0, positional_size, 2) * (-log(10000.0) / positional_size))
+        pe[:, 0::2] = torch.sin(position * d_term)
+        if positional_size % 2 == 0:
+            pe[:, 1::2] = torch.cos(position * d_term)
+        else:
+            pe[:, 1::2] = torch.cos(position * d_term)[:, :-1]
+        # Register encodings as buffer, so they do not become parameters.
+        self.register_buffer('pe', pe)
+        self._out_size = in_size + self._positional_size
+
+    def forward(self, x):
+        # Repeat along batch axis
+        y = self.pe.repeat(x.shape[0], 1, 1)
+        # Concatenate along last axis. I.e. add to the feature axis.
+        x = torch.cat([x, y], dim=2)
+        return x
+
+    @property
+    def output_size(self) -> int:
+        return self._out_size
+
+    def extra_repr(self) -> str:
+        return f'series_size={self._series_size}, positional_size={self._positional_size}'
+
+
+class PositionalEmbedding(_Layer):
+    def __init__(self, in_size: int, series_size: int, positional_size: int):
+        super(PositionalEmbedding, self).__init__()
+        self._series_size = series_size
+        self._positional_size = positional_size
+        self.pos_embedding = nn.Embedding(series_size, positional_size)
+        self._out_size = in_size + self._positional_size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = self.pos_embedding(torch.arange(self._series_size, device=x.device, dtype=torch.long))
+        y = y.repeat(x.shape[0], 1, 1)
+        x = torch.cat([x, y], dim=2)
+        return x
+
+    @property
+    def output_size(self) -> int:
+        return self._out_size
+
+    def extra_repr(self) -> str:
+        return f'series_size={self._series_size}, positional_size={self._positional_size}'

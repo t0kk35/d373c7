@@ -5,6 +5,7 @@ Module for Layers that can be used as body in the _Module objects.
 import torch
 import torch.nn as nn
 from .common import _Layer, PyTorchLayerException
+from .base import PositionalEncoding, PositionalEmbedding
 from collections import OrderedDict
 from typing import List, Union, Tuple
 
@@ -41,6 +42,15 @@ class BodySequential(_Layer):
     @property
     def output_size(self) -> int:
         return self._out_size
+
+
+class BodyWithAttention(BodySequential):
+    def __init__(self, in_size, attention: _Layer, layers: List[_Layer]):
+        super(BodyWithAttention, self).__init__(in_size, [attention]+layers)
+
+    def attention_weights(self, x: torch.Tensor) -> torch.Tensor:
+        _, w = self.layers[0](x, return_weights=True)
+        return w
 
 
 class _RecurrentBody(_Layer):
@@ -136,6 +146,26 @@ class ConvolutionalBody1d(_Layer):
     @staticmethod
     def _layer_out_size(in_size: int, kernel: int, stride: int, padding: int) -> int:
         return int(((in_size - kernel + (2 * padding)) / stride) + 1)
+
+    @property
+    def output_size(self) -> int:
+        return self._output_size
+
+
+class TransformerBody(_Layer):
+    def __init__(self, in_size: int, series_size: int, positional_size: int, heads: int, feedforward_size: int,
+                 drop_out: float):
+        super(TransformerBody, self).__init__()
+        # self.pos = PositionalEncoding(in_size, series_size, positional_size)
+        self.pos = PositionalEmbedding(in_size, series_size, positional_size)
+        self.trans = nn.TransformerEncoderLayer(self.pos.output_size, heads, feedforward_size, drop_out, 'relu')
+        self._output_size = self.pos.output_size * series_size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.pos(x)
+        x = self.trans(x)
+        x = torch.flatten(x, start_dim=1)
+        return x
 
     @property
     def output_size(self) -> int:

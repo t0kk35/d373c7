@@ -7,5 +7,4 @@ from .base import LinDropAct, BinaryOutput, Embedding, SingleClassBinaryOutput, 
 from .base import AttentionLastEntry
 from .base import TensorDefinitionHeadMulti
 from .output import CategoricalLogSoftmax1d
-from .body import LSTMBody, GRUBody, BodyMulti, BodySequential, ConvolutionalBody1d
-
+from .body import LSTMBody, GRUBody, BodyMulti, BodySequential, ConvolutionalBody1d, TransformerBody
