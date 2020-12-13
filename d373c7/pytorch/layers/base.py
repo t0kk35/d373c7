@@ -263,6 +263,8 @@ class AttentionLastEntry(_Layer):
         w = torch.squeeze(torch.bmm(k, q.transpose(1, 2)), dim=2)
         # Softmax along the series axis. Un-squeeze to make broadcast possible
         w = torch.unsqueeze(nnf.softmax(w, dim=1), dim=2)
+        # Scale weights so they don't explode and kill the gradients
+        w = w / sqrt(self._in_size)
         # Multiply each entry with the weights.
         x = torch.mul(v, w)
         if return_weights:
@@ -342,8 +344,11 @@ class PositionalEmbedding(_Layer):
         self._out_size = in_size + self._positional_size
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Calculate the embedding for the positions
         y = self.pos_embedding(torch.arange(self._series_size, device=x.device, dtype=torch.long))
+        # Repeat along batch axis
         y = y.repeat(x.shape[0], 1, 1)
+        # Concatenate position with the original features.
         x = torch.cat([x, y], dim=2)
         return x
 

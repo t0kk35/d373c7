@@ -6,6 +6,6 @@ from .classifiers import FeedForwardFraudClassifier, FeedForwardFraudClassifierM
 from .classifiers import RecurrentFraudClassifier, RecurrentFraudClassifierMulti
 from .classifiers import ClassifierDefaults, RecurrentClassifierDefaults, ConvolutionalClassifierDefaults
 from .classifiers import ConvolutionalFraudClassifier, ConvolutionalFraudClassifierMulti
-from .classifiers import TransformerFraudClassifier, TransformerFraudClassifierMulti
+from .classifiers import TransformerFraudClassifier, TransformerFraudClassifierMulti, TransformerClassifierDefaults
 from .encoders import AutoEncoderDefaults, BinaryToBinaryAutoEncoder, BinaryToBinaryVariationalAutoEncoder
 from .encoders import CategoricalToBinaryAutoEncoder, CategoricalToCategoricalAutoEncoder

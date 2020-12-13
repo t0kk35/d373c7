@@ -154,10 +154,12 @@ class ConvolutionalBody1d(_Layer):
 
 class TransformerBody(_Layer):
     def __init__(self, in_size: int, series_size: int, positional_size: int, heads: int, feedforward_size: int,
-                 drop_out: float):
+                 drop_out: float, pos_logic: str):
         super(TransformerBody, self).__init__()
-        # self.pos = PositionalEncoding(in_size, series_size, positional_size)
-        self.pos = PositionalEmbedding(in_size, series_size, positional_size)
+        if pos_logic == 'encoding':
+            self.pos = PositionalEncoding(in_size, series_size, positional_size)
+        else:
+            self.pos = PositionalEmbedding(in_size, series_size, positional_size)
         self.trans = nn.TransformerEncoderLayer(self.pos.output_size, heads, feedforward_size, drop_out, 'relu')
         self._output_size = self.pos.output_size * series_size
 
