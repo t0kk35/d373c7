@@ -216,7 +216,7 @@ class Tester(_ModelManager):
 
     def score_plot(self) -> Tuple[np.array, np.array]:
         # Model to GPU
-        label_index = self.model.tensor_definition.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        label_index = self.model.label_index
         self.model.to(self._device)
         scores = Tester._score_step(self.model, self._device, self._test_dl, self.model.loss_fn())
         scores = torch.cat(scores, dim=0).cpu().numpy()

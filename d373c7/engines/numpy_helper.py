@@ -232,7 +232,10 @@ class NumpyList:
         self._val_is_built_from(tensor_def)
         NumpyList._val_single_label(tensor_def)
         label_index = tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
-        index = np.where(self._numpy_list[label_index] == label)
+        labels = self._numpy_list[label_index]
+        if len(labels.shape) == 2:
+            labels = np.squeeze(labels)
+        index = np.where(labels == label)
         lists = [sequence[index] for sequence in self._numpy_list]
         return NumpyList(lists)
 

@@ -51,7 +51,8 @@ class SingleLabelBCELoss(_LossBase):
         pr = torch.squeeze(args[0])
         lb = torch.squeeze(args[1][0])
         loss = self.score_loss(pr, lb)
-        return self.score_aggregator(loss, dim=1)
+        # Aggregate over all but batch dimension.
+        return self.score_aggregator(loss, dim=list(range(1, len(pr.shape))))
 
 
 class MultiLabelBCELoss(_LossBase):
@@ -62,16 +63,26 @@ class MultiLabelBCELoss(_LossBase):
 
     def __call__(self, *args, **kwargs):
         pr = torch.squeeze(args[0])
-        lb = [nnf.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
-        loss = self.train_loss(pr, torch.cat(lb, dim=1))
+        # if it's a 3-D tensor assume we are dealing with a series.
+        if len(pr.shape) == 3:
+            lb = [nnf.one_hot(args[1][0][:, :, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
+            loss = self.train_loss(pr, torch.cat(lb, dim=2))
+        else:
+            lb = [nnf.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
+            loss = self.train_loss(pr, torch.cat(lb, dim=1))
         return loss
 
     def score(self, *args, **kwargs) -> torch.Tensor:
         pr = torch.squeeze(args[0])
-        lb = [nnf.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
-        lb = torch.cat(lb, dim=1)
+        # if it's a 3-D tensor assume we are dealing with a series.
+        if len(pr.shape) == 3:
+            lb = [nnf.one_hot(args[1][0][:, :, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
+            lb = torch.cat(lb, dim=2)
+        else:
+            lb = [nnf.one_hot(args[1][0][:, i], num_classes=s).type(pr.type()) for i, s in enumerate(self._sizes)]
+            lb = torch.cat(lb, dim=1)
         score = self.score_loss(pr, lb)
-        score = self.score_aggregator(score, dim=1)
+        score = self.score_aggregator(score, dim=list(range(1, len(pr.shape))))
         return score
 
 
@@ -83,6 +94,31 @@ class MultiLabelNLLLoss(_LossBase):
     def __call__(self, *args, **kwargs):
         pr = torch.squeeze(args[0])
         lb = args[1][0]
+        loss = self.train_loss(pr, lb)
+        return loss
+
+    def score(self, *args, **kwargs) -> torch.Tensor:
+        pr = torch.squeeze(args[0])
+        lb = args[1][0]
+        score = self.score_loss(pr, lb)
+        score = self.score_aggregator(score, dim=list(range(1, len(pr.shape)-1)))
+        return score
+
+
+class MultiLabelNLLLoss2d(_LossBase):
+    """ MultiLabelNLLLoss Negative Log Likely-hood Loss"""
+    def __init__(self, reduction='mean'):
+        _LossBase.__init__(self, nn.NLLLoss, reduction)
+
+    def __call__(self, *args, **kwargs):
+        pr = torch.squeeze(args[0])
+        lb = args[1][0]
+        # loss = 0
+        # x = range(pr.shape[1])
+        # for i in x:
+        #     a = pr[:, i]
+        #     b = lb[:, i]
+        #     loss += self.train_loss(pr[:, i], lb[:, i])
         loss = self.train_loss(pr, lb)
         return loss
 

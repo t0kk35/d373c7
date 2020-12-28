@@ -4,10 +4,22 @@ Module for layers that are typically used as output
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as nf
 from math import sqrt
 from .common import _Layer
 from ...features.common import FeatureCategorical
 from ...features.tensor import TensorDefinition
+
+
+class SigmoidOut(_Layer):
+    """Output layer that only applies a sigmoid to the input tensor"""
+    def __init__(self):
+        super(SigmoidOut, self).__init__()
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.sigmoid(x)
+        return x
 
 
 class _CategoricalLogSoftmax(_Layer):
@@ -48,7 +60,8 @@ class _CategoricalLogSoftmax(_Layer):
 
     def forward(self, x: torch.Tensor):
         x = torch.einsum(self.ein_sum_expression, x, self.f_weight)
-        x = x + self.f_bias
+        # TODO Don't leave like this.
+        # x = x + self.f_bias
         if self.mask is not None:
             x = x * self.mask
         x = self.lsm(x)
@@ -74,22 +87,16 @@ class CategoricalLogSoftmax1d(_CategoricalLogSoftmax):
         return f'max_dim={self.hidden_dim}, classes={self.class_dim}, use_mask={self.use_mask}'
 
 
-# Normally not used anymore
-class CategoricalLogSoftmax1dV2(_Layer):
-    def __init__(self, tensor_def: TensorDefinition, input_size: int, use_mask=True):
-        super(CategoricalLogSoftmax1dV2, self).__init__()
-        i_features = [f for f in tensor_def.categorical_features() if isinstance(f, FeatureCategorical)]
-        self.sizes = [len(f) + 1 for f in i_features]
-        self.max_size = max(self.sizes)
-        self.layers = nn.ModuleList([nn.Linear(input_size, s) for s in self.sizes])
-        self.lsm = nn.LogSoftmax(dim=1)
-
-    def forward(self, x: torch.Tensor):
-        x = [ly(x) for ly in self.layers]
-        x = [self.lsm(i) for i in x]
-        x = [nn.functional.pad(i, [0, self.max_size-i.shape[1]], 'constant', 0) for i in x]
-        x = torch.stack(x, dim=2)
-        return x
+class CategoricalLogSoftmax2d(_CategoricalLogSoftmax):
+    def __init__(self, tensor_def: TensorDefinition, input_size: int, use_mask=False):
+        super(CategoricalLogSoftmax2d, self).__init__(tensor_def, 2, 'bsi,ilc->blcs', use_mask)
+        self.f_weight = nn.parameter.Parameter(torch.zeros(input_size, self.hidden_dim, self.class_dim))
+        self.f_bias = nn.parameter.Parameter(torch.zeros(self.hidden_dim, self.class_dim))
+        mask = torch.zeros(self.hidden_dim, self.class_dim)
+        for i, s in enumerate(self.sizes):
+            mask[:s+1, i] = 1.0
+        self.register_buffer('mask', mask if use_mask else None)
+        self.reset_parameters()
 
     def extra_repr(self) -> str:
-        return f'max_size={self.max_size} '
+        return f'max_dim={self.hidden_dim}, classes={self.class_dim}, use_mask={self.use_mask}'

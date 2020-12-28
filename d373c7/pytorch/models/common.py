@@ -98,6 +98,10 @@ class _Model(nn.Module):
         )
 
     @property
+    def label_index(self) -> int:
+        raise NotImplemented(f'Class label index should be implemented by children')
+
+    @property
     def loss_fn(self) -> _LossBase:
         raise NotImplemented(f'Loss Function getter not implemented in base _Model Class. '
                              f'Needs to be implemented by the child classes')

@@ -5,7 +5,7 @@ Module for Layers that can be used as body in the _Module objects.
 import torch
 import torch.nn as nn
 from .common import _Layer, PyTorchLayerException
-from .base import PositionalEncoding, PositionalEmbedding
+from .base import PositionalEncoding, PositionalEmbedding, ConvolutionalBodyBase1d
 from collections import OrderedDict
 from typing import List, Union, Tuple
 
@@ -103,33 +103,13 @@ class GRUBody(_RecurrentBody):
         return rnn
 
 
-class ConvolutionalBody1d(_Layer):
+class ConvolutionalBody1d(ConvolutionalBodyBase1d):
     def __init__(self, in_size: int, series_size: int, conv_layers: [List[Tuple[int, int, int]]],
                  drop_out: float, dense: bool):
-        super(ConvolutionalBody1d, self).__init__()
-        self._in_size = in_size
-        self._series_size = series_size
-        self._drop_out = drop_out
+        super(ConvolutionalBody1d, self).__init__(in_size, series_size, conv_layers, drop_out)
         self._dense = dense
-        self._output_size = 0
-        ly = OrderedDict()
-        prev_size = self._series_size
-        prev_channels = self._in_size
-        for i, (out_channels, kernel, stride) in enumerate(conv_layers):
-            ly.update({f'conv_{i+1:02d}': nn.Conv1d(prev_channels, out_channels, kernel, stride)})
-            ly.update({f'relu_{i+1:02d}': nn.ReLU(inplace=True)})
-            # Add BatchNorm Every Second layer
-            if (i+1) % 2 == 0:
-                ly.update({f'norm_{i+1:02d}': nn.BatchNorm1d(out_channels)})
-            prev_channels = out_channels
-            prev_size = self._layer_out_size(prev_size, kernel, stride, 0)
-        if drop_out != 0.0:
-            ly.update({f'dropout': nn.Dropout(drop_out)})
-        self.conv_layers = nn.Sequential(ly)
-        # Output size is the reduced series length times the # filters in the last layer
-        self._output_size = prev_size * conv_layers[-1][0]
         if self._dense:
-            self._output_size += self._in_size
+            self.output_size += self._in_size
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Switch series and feature dim, Conv layers want the channel/feature dim as second, the series as third.
@@ -142,14 +122,6 @@ class ConvolutionalBody1d(_Layer):
             # Add full last original input entry
             y = torch.cat([y, x[:, -1, :]], dim=1)
         return y
-
-    @staticmethod
-    def _layer_out_size(in_size: int, kernel: int, stride: int, padding: int) -> int:
-        return int(((in_size - kernel + (2 * padding)) / stride) + 1)
-
-    @property
-    def output_size(self) -> int:
-        return self._output_size
 
 
 class TransformerBody(_Layer):

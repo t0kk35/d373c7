@@ -112,7 +112,7 @@ class ClassifierDefaults(ModelDefaults):
         self.set('emb_dropout', dropout)
 
 
-class BinaryClassifier(_Model):
+class _BinaryClassifier(_Model):
     @staticmethod
     def _val_has_lc_label(tensor_def: TensorDefinition):
         if LEARNING_CATEGORY_LABEL not in tensor_def.learning_categories:
@@ -158,9 +158,8 @@ class BinaryClassifier(_Model):
             return head
 
     def __init__(self, tensor_def: TensorDefinition, layers: List[int], defaults: ClassifierDefaults):
-        super(BinaryClassifier, self).__init__(defaults)
+        super(_BinaryClassifier, self).__init__(defaults)
         self._val_layers(layers)
-        self._tensor_def = tensor_def
         self._val_has_lc_label(tensor_def)
         self._val_label(tensor_def)
         do = self.defaults.get_float('lin_interlayer_drop_out')
@@ -172,10 +171,6 @@ class BinaryClassifier(_Model):
         self.linear = LinDropAct(size_after_body, ly)
         self.bn = nn.BatchNorm1d(self.linear.output_size) if bn else None
         self.out = SingleClassBinaryOutput(self.linear.output_size)
-
-    @property
-    def label_index(self) -> int:
-        raise NotImplemented(f'Class label index should be implemented by children')
 
     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
         return self.head.get_x(ds)
@@ -216,7 +211,7 @@ class BinaryClassifier(_Model):
         return w
 
 
-class _BinaryClassifierSingle(BinaryClassifier):
+class _BinaryClassifierSingle(_BinaryClassifier):
     """Internal class to bundle some of the logic which is similar for classifiers that with a single head.
 
     Args:
@@ -242,7 +237,7 @@ class _BinaryClassifierSingle(BinaryClassifier):
         return self._label_index
 
 
-class _BinaryClassifierMulti(BinaryClassifier):
+class _BinaryClassifierMulti(_BinaryClassifier):
     """Internal class to bundle some of the logic which is similar for classifiers that with a multi head.
 
     Args:
@@ -444,7 +439,7 @@ class ConvolutionalClassifierDefaults(ClassifierDefaults):
         self.set('conv_dropout', dropout)
 
 
-class ConvolutionalFraudClassifier(BinaryClassifier):
+class ConvolutionalFraudClassifier(_BinaryClassifier):
     def __init__(self, tensor_def: TensorDefinition, conv_layers: List[Tuple[int, int, int]],
                  linear_layers: List[int], defaults=ConvolutionalClassifierDefaults()):
         self._t_def = tensor_def
