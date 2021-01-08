@@ -1,6 +1,6 @@
-# d373c7
 Under __Heavy__ Construction
 ---
+# d373c7
 ## Some Deep Learning for Financial Crime Experiments
 Deep Learning is probably not used enough in financial crime fraud detection. This repo hosts some code and experiments which should hopefully help one to get running experiments quickly on financial data such as credit card transactions or payments.
 
