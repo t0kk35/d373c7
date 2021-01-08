@@ -28,7 +28,9 @@ The subdirectories in the [Notebooks](https://github.com/t0kk35/d373c7/tree/mast
   - 01_classifiers (Classifier examples, i.e. Supervised models to classify fraud vs. non-fraud)
   - 02_encoders (Encoder style models, models designed to predict their own input)
   - 03_multi_head (Models having more than one input source)
-
+* 02_series (Examples of models using multiple transactions at once)
+  - 01_stacked (Transaction that are stacked, i.e. sequentially ordered)
+    - 01_classifiers
 Most examples use the [banksim1](https://www.kaggle.com/ntnu-testimon/banksim1) data-set. It is a fairly limited and simple data-set but has the advantage it is not PCA'ed. A lot of the public sample data for Fraud and Credit Card Fraud are PCA'ed, which makes them less useful to show-off Neural Nets. Finding the fraud in this data-set is not complicated at all, if anything it should show the potential architectures. In order to actually compare performance a more complex and bigger data-set would be needed.
 
 ---
