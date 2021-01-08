@@ -24,10 +24,10 @@ But no stress; some creative use of data augmentation, auto-encoders, transfer l
 This repo contains a set of examples in the [Notebooks](https://github.com/t0kk35/d373c7/tree/master/notebooks) section. They are a good place to start and get a feel for what can be achieved with Neural Networks. The sub-directories and notebooks follow a numbering scheme and are like the chapters in a book, if followed sequentially they hopefully convey a story. (The notebooks can be opened directly in GitHub, but you sometimes need to click 'Reload' a couple of times ...)
 
 The subdirectories in the [Notebooks](https://github.com/t0kk35/d373c7/tree/master/notebooks) section have this structure;
-- 01_single (Examples for single transactions neural nets)
--- 01_classifiers (Classifier examples, i.e. Supervised models to classify fraud vs. non-fraud)
--- 02_encoders (Encoder style models, models designed to predict their own input)
--- 03_multi_head (Models having more than one input source)
+* 01_single (Examples for single transactions neural nets)
+- 01_classifiers (Classifier examples, i.e. Supervised models to classify fraud vs. non-fraud)
+- 02_encoders (Encoder style models, models designed to predict their own input)
+- 03_multi_head (Models having more than one input source)
 
 Most examples use the [banksim1](https://www.kaggle.com/ntnu-testimon/banksim1) data-set. It is a fairly limited and simple data-set but has the advantage it is not PCA'ed. A lot of the public sample data for Fraud and Credit Card Fraud are PCA'ed, which makes them less useful to show-off Neural Nets. Finding the fraud in this data-set is not complicated at all, if anything it should show the potential architectures. In order to actually compare performance a more complex and bigger data-set would be needed.
 
