@@ -10,5 +10,4 @@ from .base import ConvolutionalBodyBase1d, ConvolutionalBodyBaseTranspose1d
 from .output import CategoricalLogSoftmax1d, CategoricalLogSoftmax2d, SigmoidOut
 from .classifiers import LSTMBody, GRUBody, BodyMulti, BodySequential, ConvolutionalBody1d, TransformerBody
 from .encoders import VAELatentToLinear, VAELinearToLatent
-from .encoders import GRUEncoder, GRUDecoder, LSTMEncoder, LSTMDecoder
 from .encoders import ConvolutionalEncoder, ConvolutionalDecoder

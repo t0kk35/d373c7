@@ -112,18 +112,14 @@ class MultiLabelNLLLoss2d(_LossBase):
 
     def __call__(self, *args, **kwargs):
         pr = torch.squeeze(args[0])
+        pr = pr.transpose(1, 2)
         lb = args[1][0]
-        # loss = 0
-        # x = range(pr.shape[1])
-        # for i in x:
-        #     a = pr[:, i]
-        #     b = lb[:, i]
-        #     loss += self.train_loss(pr[:, i], lb[:, i])
         loss = self.train_loss(pr, lb)
         return loss
 
     def score(self, *args, **kwargs) -> torch.Tensor:
         pr = torch.squeeze(args[0])
+        pr = pr.transpose(1, 2)
         lb = args[1][0]
         score = self.score_loss(pr, lb)
         score = self.score_aggregator(score, dim=list(range(1, len(pr.shape)-1)))

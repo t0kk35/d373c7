@@ -9,6 +9,6 @@ from .classifiers import ConvolutionalFraudClassifier, ConvolutionalFraudClassif
 from .classifiers import TransformerFraudClassifier, TransformerFraudClassifierMulti, TransformerClassifierDefaults
 from .encoders import AutoEncoderDefaults, BinaryToBinaryAutoEncoder, BinaryToBinaryVariationalAutoEncoder
 from .encoders import CategoricalToBinaryAutoEncoder, CategoricalToCategoricalAutoEncoder
-from .encoders import BinaryToBinaryRecurrentAutoEncoder, CategoricalToBinaryRecurrentAutoEncoder
-from .encoders import CategoricalToCategoricalRecurrentAutoEncoder
 from .encoders import BinaryToBinaryConvolutionalAutoEncoder
+from .encoders import CategoricalToBinaryConvolutionalAutoEncoder, CategoricalToCategoricalConvolutionalAutoEncoder
+

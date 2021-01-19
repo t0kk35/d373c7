@@ -4,7 +4,6 @@ Module for layers that are typically used as output
 """
 import torch
 import torch.nn as nn
-import torch.nn.functional as nf
 from math import sqrt
 from .common import _Layer
 from ...features.common import FeatureCategorical
@@ -60,8 +59,7 @@ class _CategoricalLogSoftmax(_Layer):
 
     def forward(self, x: torch.Tensor):
         x = torch.einsum(self.ein_sum_expression, x, self.f_weight)
-        # TODO Don't leave like this.
-        # x = x + self.f_bias
+        x = x + self.f_bias
         if self.mask is not None:
             x = x * self.mask
         x = self.lsm(x)
@@ -89,7 +87,7 @@ class CategoricalLogSoftmax1d(_CategoricalLogSoftmax):
 
 class CategoricalLogSoftmax2d(_CategoricalLogSoftmax):
     def __init__(self, tensor_def: TensorDefinition, input_size: int, use_mask=False):
-        super(CategoricalLogSoftmax2d, self).__init__(tensor_def, 2, 'bsi,ilc->blcs', use_mask)
+        super(CategoricalLogSoftmax2d, self).__init__(tensor_def, 3, 'bsi,ilc->bslc', use_mask)
         self.f_weight = nn.parameter.Parameter(torch.zeros(input_size, self.hidden_dim, self.class_dim))
         self.f_bias = nn.parameter.Parameter(torch.zeros(self.hidden_dim, self.class_dim))
         mask = torch.zeros(self.hidden_dim, self.class_dim)

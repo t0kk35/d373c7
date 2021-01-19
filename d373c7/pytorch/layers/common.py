@@ -16,6 +16,8 @@ class PyTorchLayerException(Exception):
 
 
 class _Layer(nn.Module):
+    """Base class for all layers in d373c7.
+    """
     def __init__(self):
         super(_Layer, self).__init__()
 
@@ -24,5 +26,9 @@ class _Layer(nn.Module):
 
     @property
     def output_size(self) -> int:
+        """Property that returns the output size of the layer
+
+        :returns: Integer value for the size of the layer as it outputs
+        """
         raise NotImplemented(f'Unimplemented <output_size>  in <{self.__class__.__name__}>. Should be implemented by ' +
                              f'child classes')

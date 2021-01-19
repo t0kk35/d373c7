@@ -13,7 +13,6 @@ from ..layers import LinDropAct, BinaryOutput
 from ..layers.common import _Layer
 from ..layers import VAELinearToLatent, VAELatentToLinear
 from ..layers import CategoricalLogSoftmax1d, CategoricalLogSoftmax2d, SigmoidOut
-from ..layers import LSTMEncoder, LSTMDecoder, GRUEncoder, GRUDecoder
 from ..layers import ConvolutionalEncoder, ConvolutionalDecoder
 from ..optimizer import _Optimizer, AdamWOptimizer
 from ..loss import _LossBase, SingleLabelBCELoss, BinaryVAELoss, MultiLabelNLLLoss, MultiLabelBCELoss
@@ -319,65 +318,6 @@ class LatentLinearEncoder(_LinearEncoder):
         return nn.Linear(self.body.output_size, self._latent_dim)
 
 
-class LatentVAEEncoder(_LinearEncoder):
-    """An encoder that uses linear layers and outputs a VAE style latent variable. It outputs a linear layer with the
-    averages and a linear layer with the standard deviations.
-
-    Args:
-        tensor_def: A Tensor Definition describing the input.
-        latent_dim: The size of the latent dimension
-        layers: List of integers. Each entry will become layer and the int-value the size of the layer.
-        defaults: An instance of AutoEncoderDefaults, it contains some of the default settings to use.
-    """
-    def __init__(self, tensor_def: TensorDefinition, latent_dim: int, layers: List[int], defaults: AutoEncoderDefaults):
-        self._latent_dim = latent_dim
-        super(LatentVAEEncoder, self).__init__(tensor_def, layers, defaults)
-
-    def init_latent(self) -> [_Layer, nn.Module]:
-        return VAELinearToLatent(self.body.output_size, self._latent_dim)
-
-
-class LatentRNNEncoder(_EncoderSingle):
-    def __init__(self, tensor_def: TensorDefinition, node_type: str, layers: List[int],
-                 defaults: AutoEncoderDefaults):
-        self._node_type = node_type
-        self._layers = layers
-        super(LatentRNNEncoder, self).__init__(tensor_def, defaults)
-
-    def init_body(self) -> _Layer:
-        if self._node_type == 'LSTM':
-            rnn = LSTMEncoder(self.head.output_size, self._layers)
-        else:
-            rnn = GRUEncoder(self.head.output_size, self._layers)
-        return rnn
-
-    def init_latent(self) -> [_Layer, nn.Module, None]:
-        return None
-
-
-class LatentCNNEncoder(_EncoderSingle):
-    def __init__(self, tensor_def: TensorDefinition, conv_layers: List[Tuple[int, int]],
-                 defaults: AutoEncoderConvolutionalDefaults):
-        self._conv_layers = conv_layers
-        self._latent_series_length = 0
-        super(LatentCNNEncoder, self).__init__(tensor_def, defaults)
-
-    def init_body(self) -> _Layer:
-        do = self.defaults.get_float('enc_conv_dropout')
-        bn_int = self.defaults.get_int('enc_conv_bn_interval')
-        s_length = [s[1] for s in self._t_def.shapes if len(s) == 3][0]
-        cnn = ConvolutionalEncoder(self.head.output_size, s_length, self._conv_layers, do, batch_norm_interval=bn_int)
-        self._latent_series_length = cnn.output_series_length
-        return cnn
-
-    def init_latent(self) -> [_Layer, nn.Module, None]:
-        return None
-
-    @property
-    def latent_series_length(self) -> int:
-        return self._latent_series_length
-
-
 class LatentLinearDecoder(_Decoder):
     """A decoder that will use linear layers to expand the latent dimension out. It assumes the latent dimension is a
     linear layer. I.e each record in the batch is a rank-1 tensor
@@ -404,6 +344,24 @@ class LatentLinearDecoder(_Decoder):
         return self._out_size
 
 
+class LatentVAEEncoder(_LinearEncoder):
+    """An encoder that uses linear layers and outputs a VAE style latent variable. It outputs a linear layer with the
+    averages and a linear layer with the standard deviations.
+
+    Args:
+        tensor_def: A Tensor Definition describing the input.
+        latent_dim: The size of the latent dimension
+        layers: List of integers. Each entry will become layer and the int-value the size of the layer.
+        defaults: An instance of AutoEncoderDefaults, it contains some of the default settings to use.
+    """
+    def __init__(self, tensor_def: TensorDefinition, latent_dim: int, layers: List[int], defaults: AutoEncoderDefaults):
+        self._latent_dim = latent_dim
+        super(LatentVAEEncoder, self).__init__(tensor_def, layers, defaults)
+
+    def init_latent(self) -> [_Layer, nn.Module]:
+        return VAELinearToLatent(self.body.output_size, self._latent_dim)
+
+
 class LatentVAEDecoder(LatentLinearDecoder):
     """A decoder that will use linear layers to expand the latent dimension out. It assumes the latent dimension
     consists of 2 latent vectors for each entry, describing the latent distribution. One is the vector with averages,
@@ -427,20 +385,27 @@ class LatentVAEDecoder(LatentLinearDecoder):
         return x
 
 
-class LatentRNNDecoder(_Decoder):
-    def __init__(self, node_type: str, latent_size: int, rnn_layers: [List[int]],
-                 defaults: AutoEncoderDefaults):
-        self._node_type = node_type
-        self._rnn_layers = rnn_layers
-        self._latent_size = latent_size
-        super(LatentRNNDecoder, self).__init__(defaults)
+class LatentCNNEncoder(_EncoderSingle):
+    def __init__(self, tensor_def: TensorDefinition, conv_layers: List[Tuple[int, int]],
+                 defaults: AutoEncoderConvolutionalDefaults):
+        self._conv_layers = conv_layers
+        self._latent_series_length = 0
+        super(LatentCNNEncoder, self).__init__(tensor_def, defaults)
 
-    def init_latent(self) -> _Layer:
-        if self._node_type == 'LSTM':
-            rnn = LSTMDecoder(self._latent_size, self._rnn_layers)
-        else:
-            rnn = GRUDecoder(self._latent_size, self._rnn_layers)
-        return rnn
+    def init_body(self) -> _Layer:
+        do = self.defaults.get_float('enc_conv_dropout')
+        bn_int = self.defaults.get_int('enc_conv_bn_interval')
+        s_length = [s[1] for s in self._t_def.shapes if len(s) == 3][0]
+        cnn = ConvolutionalEncoder(self.head.output_size, s_length, self._conv_layers, do, batch_norm_interval=bn_int)
+        self._latent_series_length = cnn.output_series_length
+        return cnn
+
+    def init_latent(self) -> [_Layer, nn.Module, None]:
+        return None
+
+    @property
+    def latent_series_length(self) -> int:
+        return self._latent_series_length
 
 
 class LatentCNNDecoder(_Decoder):
@@ -550,7 +515,6 @@ class CategoricalToCategoricalAutoEncoder(_AutoEncoderModelSingle):
                  defaults=AutoEncoderDefaults()):
         self._val_layers(layers)
         self._val_only_cat(tensor_def)
-        # self._input_size = len(tensor_def.filter_features(LEARNING_CATEGORY_CATEGORICAL))
         encoder = LatentLinearEncoder(tensor_def, latent_dim, [16], defaults)
         decoder = LatentLinearDecoder(latent_dim, [16], defaults)
         out = CategoricalLogSoftmax1d(tensor_def, decoder.output_size, False)
@@ -591,43 +555,6 @@ class BinaryToBinaryVariationalAutoEncoder(_AutoEncoderModelSingle):
         x = self.decoder(x)
         x = self.out(x)
         return x, mu, s
-
-
-class BinaryToBinaryRecurrentAutoEncoder(_AutoEncoderModelSingle):
-    def __init__(self, tensor_def: TensorDefinition, node_type: str, layers: List[int], defaults=AutoEncoderDefaults()):
-        self._val_layers(layers)
-        self._val_only_bin(tensor_def)
-        input_size = len(tensor_def.filter_features(LEARNING_CATEGORY_BINARY, True))
-        encoder = LatentRNNEncoder(tensor_def, node_type, layers, defaults)
-        decoder = LatentRNNDecoder(node_type, layers[-1], [input_size] + layers[:-1], defaults)
-        out = SigmoidOut()
-        super(BinaryToBinaryRecurrentAutoEncoder, self).__init__(encoder, decoder, out, SingleLabelBCELoss(), defaults)
-
-
-class CategoricalToBinaryRecurrentAutoEncoder(_AutoEncoderModelSingle):
-    def __init__(self, tensor_def: TensorDefinition, node_type: str, layers: List[int], defaults=AutoEncoderDefaults()):
-        self._val_layers(layers)
-        self._val_only_cat(tensor_def)
-        input_size = sum([len(f) + 1 for f in tensor_def.categorical_features() if isinstance(f, FeatureCategorical)])
-        encoder = LatentRNNEncoder(tensor_def, node_type, layers, defaults)
-        decoder = LatentRNNDecoder(node_type, layers[-1], [input_size] + layers[:-1], defaults)
-        out = SigmoidOut()
-        super(CategoricalToBinaryRecurrentAutoEncoder, self).__init__(
-            encoder, decoder, out, MultiLabelBCELoss(tensor_def), defaults
-        )
-
-
-class CategoricalToCategoricalRecurrentAutoEncoder(_AutoEncoderModelSingle):
-    def __init__(self, tensor_def: TensorDefinition, node_type: str, layers: List[int], defaults=AutoEncoderDefaults()):
-        self._val_layers(layers)
-        self._val_only_cat(tensor_def)
-        input_size = sum([len(f) + 1 for f in tensor_def.categorical_features() if isinstance(f, FeatureCategorical)])
-        encoder = LatentRNNEncoder(tensor_def, node_type, layers, defaults)
-        decoder = LatentRNNDecoder(node_type, layers[-1], [input_size] + layers[:-1], defaults)
-        out = CategoricalLogSoftmax2d(tensor_def, input_size)
-        super(CategoricalToCategoricalRecurrentAutoEncoder, self).__init__(
-            encoder, decoder, out, MultiLabelNLLLoss2d(), defaults
-        )
 
 
 class BinaryToBinaryConvolutionalAutoEncoder(_AutoEncoderModelSingle):
