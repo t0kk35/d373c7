@@ -11,4 +11,3 @@ from .encoders import AutoEncoderDefaults, BinaryToBinaryAutoEncoder, BinaryToBi
 from .encoders import CategoricalToBinaryAutoEncoder, CategoricalToCategoricalAutoEncoder
 from .encoders import BinaryToBinaryConvolutionalAutoEncoder
 from .encoders import CategoricalToBinaryConvolutionalAutoEncoder, CategoricalToCategoricalConvolutionalAutoEncoder
-

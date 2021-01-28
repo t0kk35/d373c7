@@ -11,3 +11,4 @@ from .output import CategoricalLogSoftmax1d, CategoricalLogSoftmax2d, SigmoidOut
 from .classifiers import LSTMBody, GRUBody, BodyMulti, BodySequential, ConvolutionalBody1d, TransformerBody
 from .encoders import VAELatentToLinear, VAELinearToLatent
 from .encoders import ConvolutionalEncoder, ConvolutionalDecoder
+

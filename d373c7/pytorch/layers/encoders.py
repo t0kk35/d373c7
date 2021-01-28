@@ -5,7 +5,7 @@ Module for layers that are used in auto-encoders
 import torch
 import torch.nn as nn
 from .common import _Layer
-from .base import ConvolutionalBodyBase1d, ConvolutionalBodyBaseTranspose1d
+from .base import ConvolutionalBodyBase1d, ConvolutionalBodyBaseTranspose1d, PositionalEmbedding, PositionalEncoding
 from typing import List, Tuple
 
 
@@ -61,6 +61,7 @@ class ConvolutionalEncoder(ConvolutionalBodyBase1d):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Switch series and feature dim, Conv layers want the channel/feature dim as second, the series as third.
+        # Shape needs to be (B, F, S)
         x = x.transpose(1, 2)
         # Do convolutions + Potential Dropout
         x = self.conv_layers(x)
@@ -78,6 +79,6 @@ class ConvolutionalDecoder(ConvolutionalBodyBaseTranspose1d):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv_layers(x)
-        # Switch back the series and feature dim.
+        # Switch back the series and feature dim. Shape becomes (B, S, F)
         x = x.transpose(1, 2)
         return x

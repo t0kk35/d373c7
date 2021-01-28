@@ -137,8 +137,9 @@ class TransformerBody(_Layer):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.pos(x)
-        x = self.trans(x)
-        x = torch.flatten(x, start_dim=1)
+        # Transformers want (S, B, F) and the input is (B, S, F).
+        x = self.trans(x.transpose(0, 1))
+        x = torch.flatten(x.transpose(1, 0), start_dim=1)
         return x
 
     @property
