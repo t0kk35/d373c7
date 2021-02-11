@@ -312,10 +312,14 @@ class NumpyList:
         :param tensor_def_filter: The TensorDefinition we want the lists for.
         :return: New NumpyList object containing only the lists of the filtered TensorDefinition
         """
-        lc_count = [0] + [len(td.learning_categories) for td in tensor_def_m.tensor_definitions]
+        # Build a list of accumulated counts.
+        acc_counts = [0]
+        for td in tensor_def_m.tensor_definitions:
+            acc_counts.append(len(td.learning_categories) + acc_counts[-1])
+        # i is the entry we need to filter out.
         i = tensor_def_m.tensor_definitions.index(tensor_def_filter)
-        start, end = lc_count[i], lc_count[i] + lc_count[i+1]
-        npl = NumpyList(self.lists[start: end])
+        # Filter the Numpy lists. Use the current counts as start and end of a slice
+        npl = NumpyList(self.lists[acc_counts[i]: acc_counts[i+1]])
         return npl
 
     def multi_is_built_from(self, tensor_def: TensorDefinitionMulti):

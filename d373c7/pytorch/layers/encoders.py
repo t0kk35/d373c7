@@ -4,12 +4,12 @@ Module for layers that are used in auto-encoders
 """
 import torch
 import torch.nn as nn
-from .common import _Layer
+from .common import Layer
 from .base import ConvolutionalBodyBase1d, ConvolutionalBodyBaseTranspose1d, PositionalEmbedding, PositionalEncoding
 from typing import List, Tuple
 
 
-class VAELinearToLatent(_Layer):
+class VAELinearToLatent(Layer):
     """Layer to encoder a linear layer to a VAE style latent dimension. Ie. having 2 vectors. One containing the
     averages, the other containing the standard deviations.
 
@@ -36,7 +36,7 @@ class VAELinearToLatent(_Layer):
         return f'output_size={self._out_size}'
 
 
-class VAELatentToLinear(_Layer):
+class VAELatentToLinear(Layer):
     def __int__(self):
         super(VAELatentToLinear, self).__init__()
 

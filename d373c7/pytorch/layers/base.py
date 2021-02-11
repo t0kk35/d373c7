@@ -5,7 +5,7 @@ Module for common layers
 import torch
 import torch.nn as nn
 import torch.nn.functional as nnf
-from .common import _Layer, PyTorchLayerException
+from .common import Layer, PyTorchLayerException
 from ...features.tensor import TensorDefinition, TensorDefinitionMulti
 from ...features.common import LEARNING_CATEGORY_BINARY, FeatureCategorical
 from ...features import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL
@@ -14,7 +14,7 @@ from collections import OrderedDict
 from typing import List, Tuple, Union
 
 
-class LinDropAct(_Layer):
+class LinDropAct(Layer):
     """Layer that runs a sequence of Linear/Drop-out/Activation operations. The definition will determine how many
     layers there are.
     For instance definition = [(128,0.0),(64,0.0),(32.0.1) will create 3 Linear Layers of 128, 64 and 32 features
@@ -46,7 +46,7 @@ class LinDropAct(_Layer):
         return self.layers(x)
 
 
-class Embedding(_Layer):
+class Embedding(Layer):
     """Layer that creates a set of torch embedding layers. One for each 'FeatureIndex' more specifically.
     The embeddings will be concatenated in the forward operation. So this will take a tensor of torch.long, run each
     through a torch embedding layer, concatenate the output, apply dropout and return.
@@ -68,6 +68,14 @@ class Embedding(_Layer):
             raise PyTorchLayerException(
                 f'Feature <{feature.name}> is not known to this embedding layer. Please check the model was created ' +
                 f'with a Tensor Definition than contains this feature'
+            )
+
+    @staticmethod
+    def _val_feature_is_categorical(feature: FeatureCategorical):
+        if not isinstance(feature, FeatureCategorical):
+            raise PyTorchLayerException(
+                f'The input to the "embedding_weight" method must be a feature of type "FeatureCategorical". ' +
+                f'Got a <{feature.__class__}>'
             )
 
     def __init__(self, tensor_def: TensorDefinition, dropout: float, min_dims: int, max_dims: int):
@@ -94,13 +102,14 @@ class Embedding(_Layer):
         return x
 
     def embedding_weight(self, feature: FeatureCategorical) -> torch.Tensor:
+        self._val_feature_is_categorical(feature)
         self._val_feature_in_embedding(feature)
         i = self._i_features.index(feature)
         w = self.embeddings[i].weight
         return w
 
 
-class BinaryOutput(_Layer):
+class BinaryOutput(Layer):
     """Layer which can be used as output layer for binary classifications. It consists of a linear layer mapping from
     'input_size' to 'output_size' followed by a Sigmoid Layer
 
@@ -139,7 +148,7 @@ class SingleClassBinaryOutput(BinaryOutput):
         return 1
 
 
-class TensorDefinitionHead(_Layer):
+class TensorDefinitionHead(Layer):
     @staticmethod
     def _val_has_bin_or_con_or_cat_features(tensor_def: TensorDefinition):
         if not (LEARNING_CATEGORY_BINARY in tensor_def.learning_categories
@@ -199,6 +208,7 @@ class TensorDefinitionHead(_Layer):
         x = torch.cat(cat_list, dim=self._rank-1)
         return x
 
+    # TODO Remove at some point
     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
         x = [ds[x] for x in self._indexes]
         return x
@@ -207,7 +217,7 @@ class TensorDefinitionHead(_Layer):
         return self.embedding.embedding_weight(feature)
 
 
-class TensorDefinitionHeadMulti(_Layer):
+class TensorDefinitionHeadMulti(Layer):
     def __init__(self, tensor_def: TensorDefinitionMulti, emb_dropout: float, emb_min_dim: int, emb_max_dim: int):
         super(TensorDefinitionHeadMulti, self).__init__()
         self.tensor_definition = tensor_def
@@ -242,7 +252,7 @@ class TensorDefinitionHeadMulti(_Layer):
         return f'Embedded TDs={[td.name for td in self.tensor_definition.tensor_definitions]}'
 
 
-class AttentionLastEntry(_Layer):
+class AttentionLastEntry(Layer):
     def __init__(self, in_size: int, heads: int, project_size: int):
         super(AttentionLastEntry, self).__init__()
         self._in_size = in_size
@@ -286,7 +296,7 @@ class AttentionLastEntry(_Layer):
         return f'heads={self._heads}, hidden_size={self._p_size}'
 
 
-class Attention(_Layer):
+class Attention(Layer):
     def __init__(self, in_size: int, heads: int, dropout: float):
         super(Attention, self).__init__()
         self._in_size = in_size
@@ -303,7 +313,7 @@ class Attention(_Layer):
         return self._in_size
 
 
-class PositionalEncoding(_Layer):
+class PositionalEncoding(Layer):
     def __init__(self, in_size: int, series_size: int, positional_size: int):
         super(PositionalEncoding, self).__init__()
         self._series_size = series_size
@@ -336,7 +346,7 @@ class PositionalEncoding(_Layer):
         return f'series_size={self._series_size}, positional_size={self._positional_size}'
 
 
-class PositionalEmbedding(_Layer):
+class PositionalEmbedding(Layer):
     def __init__(self, in_size: int, series_size: int, positional_size: int):
         super(PositionalEmbedding, self).__init__()
         self._series_size = series_size
@@ -361,7 +371,7 @@ class PositionalEmbedding(_Layer):
         return f'series_size={self._series_size}, positional_size={self._positional_size}'
 
 
-class ConvolutionalBodyBase1d(_Layer):
+class ConvolutionalBodyBase1d(Layer):
     def __init__(self, in_size: int, series_size: int, conv_layers: [List[Tuple[int, int, int]]],
                  drop_out: float, batch_norm_interval=2, activate_last=True):
         super(ConvolutionalBodyBase1d, self).__init__()
@@ -377,7 +387,7 @@ class ConvolutionalBodyBase1d(_Layer):
             ly.update({f'conv_{i+1:02d}': nn.Conv1d(prev_channels, out_channels, kernel, stride)})
             # Don't activate last if requested
             if i + 1 != len(conv_layers) or activate_last:
-                ly.update({f'relu_{i+1:02d}': nn.ReLU(inplace=True)})
+                ly.update({f'relu_{i+1:02d}': nn.ReLU()})
             # Add BatchNorm Every 'batch_norm_interval' layer
             if (i+1) % batch_norm_interval == 0:
                 ly.update({f'norm_{i+1:02d}': nn.BatchNorm1d(out_channels)})
@@ -414,7 +424,7 @@ class ConvolutionalBodyBase1d(_Layer):
         self._output_series_length = series_length
 
 
-class ConvolutionalBodyBaseTranspose1d(_Layer):
+class ConvolutionalBodyBaseTranspose1d(Layer):
     def __init__(self, in_size: int, series_size: int, conv_layers: [List[Tuple[int, int, int]]],
                  drop_out: float, batch_norm_interval=2, activate_last=True):
         super(ConvolutionalBodyBaseTranspose1d, self).__init__()
@@ -430,7 +440,7 @@ class ConvolutionalBodyBaseTranspose1d(_Layer):
             ly.update({f'conv_{i+1:02d}': nn.ConvTranspose1d(prev_channels, out_channels, kernel, stride)})
             # Don't activate last if requested
             if i+1 != len(conv_layers) or activate_last:
-                ly.update({f'relu_{i+1:02d}': nn.ReLU(inplace=True)})
+                ly.update({f'relu_{i+1:02d}': nn.ReLU()})
             # Add BatchNorm Every 'batch_norm_interval' layer
             if (i+1) % batch_norm_interval == 0:
                 ly.update({f'norm_{i+1:02d}': nn.BatchNorm1d(out_channels)})

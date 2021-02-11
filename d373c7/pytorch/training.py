@@ -15,7 +15,6 @@ from .schedule import LRHistory, LinearLR
 # noinspection PyProtectedMember
 from .models.common import _Model, _ModelManager
 # inspection PyProtectedMember
-from ..features.common import LEARNING_CATEGORY_LABEL
 from typing import Tuple, Dict, List
 
 

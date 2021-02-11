@@ -10,7 +10,7 @@ from .common import _Model, ModelDefaults, PyTorchModelException, TensorDefiniti
 from ..common import _History
 from ..layers import LinDropAct, BinaryOutput
 # noinspection PyProtectedMember
-from ..layers.common import _Layer
+from ..layers.common import Layer
 from ..layers import VAELinearToLatent, VAELatentToLinear
 from ..layers import CategoricalLogSoftmax1d, CategoricalLogSoftmax2d, SigmoidOut
 from ..layers import ConvolutionalEncoder, ConvolutionalDecoder
@@ -87,7 +87,7 @@ class AutoEncoderConvolutionalDefaults(AutoEncoderDefaults):
         self.set('dec_conv_bn_interval', interval)
 
 
-class _Encoder(_Layer):
+class _Encoder(Layer):
     """Base Encoder class. Internal. Used to abstract some of the logic of heads.
 
     Args:
@@ -100,19 +100,19 @@ class _Encoder(_Layer):
         self.body = self.init_body()
         self.latent = self.init_latent()
 
-    def init_head(self) -> _Layer:
+    def init_head(self) -> Layer:
         """Method that should be implemented by the children that inherit _Encoder to set the head layer. The head is
         the first layer of our model.
         """
         raise NotImplemented('Should be implemented by Children')
 
-    def init_body(self) -> _Layer:
+    def init_body(self) -> Layer:
         """Method that should be implemented by the children that inherit _Encoder to set the body layer. The body is
         the part of the model that compresses the input until it is ready to to be encoded to the latent variables.
         """
         raise NotImplemented('Should be implemented by Children')
 
-    def init_latent(self) -> [_Layer, nn.Module, None]:
+    def init_latent(self) -> [Layer, nn.Module, None]:
         """Method that should be implemented by the children that inherit _Encoder to set the latent layer. The is
         latent layer is the part of the model that encodes the output of the body to a latent representation.
         """
@@ -158,7 +158,7 @@ class _Encoder(_Layer):
         return w
 
 
-class _Decoder(_Layer):
+class _Decoder(Layer):
     """Base Decoder class. Internal. This is used to abstract some of the base logic of decoders.
 
     Args:
@@ -169,10 +169,10 @@ class _Decoder(_Layer):
         super(_Decoder, self).__init__()
         self.latent = self.init_latent()
 
-    def init_latent(self) -> _Layer:
+    def init_latent(self) -> Layer:
         raise NotImplemented('Should be implemented by Children')
 
-    def init_out(self) -> _Layer:
+    def init_out(self) -> Layer:
         raise NotImplemented('Should be implemented by Children')
 
     def forward(self, x):
@@ -219,7 +219,7 @@ class _AutoEncoderModel(_Model):
                 f'features (and labels will be ignored)'
             )
 
-    def __init__(self, encoder: _Encoder, decoder: _Decoder, out: _Layer, loss_fn: _LossBase,
+    def __init__(self, encoder: _Encoder, decoder: _Decoder, out: Layer, loss_fn: _LossBase,
                  defaults: AutoEncoderDefaults):
         super(_AutoEncoderModel, self).__init__(defaults)
         self.encoder = encoder
@@ -272,7 +272,7 @@ class _EncoderSingle(_Encoder):
         self._t_def = tensor_def
         super(_EncoderSingle, self).__init__(defaults)
 
-    def init_head(self) -> _Layer:
+    def init_head(self) -> Layer:
         mn = self.defaults.get_int('emb_min_dim')
         mx = self.defaults.get_int('emb_max_dim')
         do = self.defaults.get_float('emb_dropout')
@@ -295,7 +295,7 @@ class _LinearEncoder(_EncoderSingle):
         self._layers = layers
         super(_LinearEncoder, self).__init__(tensor_def, defaults)
 
-    def init_body(self) -> _Layer:
+    def init_body(self) -> Layer:
         do = self.defaults.get_float('lin_interlayer_drop_out')
         ly = [(i, do) for i in self._layers]
         return LinDropAct(self.head.output_size, ly)
@@ -314,7 +314,7 @@ class LatentLinearEncoder(_LinearEncoder):
         self._latent_dim = latent_dim
         super(LatentLinearEncoder, self).__init__(tensor_def, layers, defaults)
 
-    def init_latent(self) -> [_Layer, nn.Module]:
+    def init_latent(self) -> [Layer, nn.Module]:
         return nn.Linear(self.body.output_size, self._latent_dim)
 
 
@@ -334,7 +334,7 @@ class LatentLinearDecoder(_Decoder):
         self._out_size = layers[-1]
         super(LatentLinearDecoder, self).__init__(defaults)
 
-    def init_latent(self) -> _Layer:
+    def init_latent(self) -> Layer:
         do = self.defaults.get_float('lin_interlayer_drop_out')
         ly = [(i, do) for i in self._layers]
         return LinDropAct(self._latent_dim, ly)
@@ -358,7 +358,7 @@ class LatentVAEEncoder(_LinearEncoder):
         self._latent_dim = latent_dim
         super(LatentVAEEncoder, self).__init__(tensor_def, layers, defaults)
 
-    def init_latent(self) -> [_Layer, nn.Module]:
+    def init_latent(self) -> [Layer, nn.Module]:
         return VAELinearToLatent(self.body.output_size, self._latent_dim)
 
 
@@ -392,7 +392,7 @@ class LatentCNNEncoder(_EncoderSingle):
         self._latent_series_length = 0
         super(LatentCNNEncoder, self).__init__(tensor_def, defaults)
 
-    def init_body(self) -> _Layer:
+    def init_body(self) -> Layer:
         do = self.defaults.get_float('enc_conv_dropout')
         bn_int = self.defaults.get_int('enc_conv_bn_interval')
         s_length = [s[1] for s in self._t_def.shapes if len(s) == 3][0]
@@ -400,7 +400,7 @@ class LatentCNNEncoder(_EncoderSingle):
         self._latent_series_length = cnn.output_series_length
         return cnn
 
-    def init_latent(self) -> [_Layer, nn.Module, None]:
+    def init_latent(self) -> [Layer, nn.Module, None]:
         return None
 
     @property
@@ -416,7 +416,7 @@ class LatentCNNDecoder(_Decoder):
         self._conv_layers = conv_layers
         super(LatentCNNDecoder, self).__init__(defaults)
 
-    def init_latent(self) -> _Layer:
+    def init_latent(self) -> Layer:
         do = self.defaults.get_float('dec_conv_dropout')
         bn_int = self.defaults.get_int('dec_conv_bn_interval')
         cnn = ConvolutionalDecoder(
@@ -435,7 +435,7 @@ class _AutoEncoderModelSingle(_AutoEncoderModel):
         loss_fn: A instance of _LossBase, used to calculate the loss
         defaults: Instance of AutoEncoderDefaults.
     """
-    def __init__(self, encoder: _EncoderSingle, decoder: _Decoder, out: _Layer, loss_fn: _LossBase,
+    def __init__(self, encoder: _EncoderSingle, decoder: _Decoder, out: Layer, loss_fn: _LossBase,
                  defaults: AutoEncoderDefaults):
         self._label_index = encoder.tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
         super(_AutoEncoderModelSingle, self).__init__(encoder, decoder, out, loss_fn, defaults)

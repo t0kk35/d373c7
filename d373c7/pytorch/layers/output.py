@@ -5,12 +5,12 @@ Module for layers that are typically used as output
 import torch
 import torch.nn as nn
 from math import sqrt
-from .common import _Layer
+from .common import Layer
 from ...features.common import FeatureCategorical
 from ...features.tensor import TensorDefinition
 
 
-class SigmoidOut(_Layer):
+class SigmoidOut(Layer):
     """Output layer that only applies a sigmoid to the input tensor"""
     def __init__(self):
         super(SigmoidOut, self).__init__()
@@ -21,7 +21,7 @@ class SigmoidOut(_Layer):
         return x
 
 
-class _CategoricalLogSoftmax(_Layer):
+class _CategoricalLogSoftmax(Layer):
     def __init__(self, tensor_def: TensorDefinition, input_rank: int, es_expr: str, use_mask=False):
         super(_CategoricalLogSoftmax, self).__init__()
         self.use_mask = use_mask

@@ -15,11 +15,11 @@ class PyTorchLayerException(Exception):
         super().__init__('Error in Layer: ' + message)
 
 
-class _Layer(nn.Module):
+class Layer(nn.Module):
     """Base class for all layers in d373c7.
     """
     def __init__(self):
-        super(_Layer, self).__init__()
+        super(Layer, self).__init__()
 
     def _forward_unimplemented(self, *inp: Any) -> None:
         raise NotImplemented(f'Unimplemented <_forward_unimplemented>  in <{self.__class__.__name__}>')
