@@ -24,6 +24,9 @@ class _LossBase:
     def score(self, *args, **kwargs) -> torch.Tensor:
         raise NotImplemented('Call not implemented for loss function')
 
+    def __repr__(self):
+        return f'{self.__class__.__name__},  {str(self._training_loss.reduction)}'
+
     @property
     def train_loss(self) -> TorchLoss:
         return self._training_loss
@@ -84,6 +87,9 @@ class MultiLabelBCELoss(_LossBase):
         score = self.score_loss(pr, lb)
         score = self.score_aggregator(score, dim=list(range(1, len(pr.shape))))
         return score
+
+    def __repr__(self):
+        return self.__class__.__name__ + ', ' + str(self._training_loss.reduction) + ', ' + str(self._sizes)
 
 
 class MultiLabelNLLLoss(_LossBase):
@@ -160,3 +166,6 @@ class BinaryVAELoss(_LossBase):
         # KL Divergence. Do not run over the batch dimension
         kl_divergence = -0.5 * torch.sum(1 + s - mu.pow(2) - s.exp(), tuple(range(1, len(mu.shape))))
         return recon_loss + (self._kl_weight * kl_divergence)
+
+    def __repr__(self):
+        return f'BinaryVAELoss(), {self._training_loss.reduction}, {self._kl_weight}'

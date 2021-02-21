@@ -109,45 +109,6 @@ class Embedding(Layer):
         return w
 
 
-class BinaryOutput(Layer):
-    """Layer which can be used as output layer for binary classifications. It consists of a linear layer mapping from
-    'input_size' to 'output_size' followed by a Sigmoid Layer
-
-    :argument in_size: The input size of the layer
-    :argument out_size: The output size of the layer
-    """
-    def __init__(self, in_size: int, out_size: int):
-        super(BinaryOutput, self).__init__()
-        self._out_size = out_size
-        self.out_block = nn.Sequential(
-            nn.Linear(in_size, out_size),
-            nn.Sigmoid()
-        )
-
-    @property
-    def output_size(self) -> int:
-        return self._out_size
-
-    def forward(self, x):
-        x = self.out_block(x)
-        return x
-
-
-class SingleClassBinaryOutput(BinaryOutput):
-    """Specialisation of the BinaryOutput Layer. It consists of a linear layer mapping from
-    'input_size' to size 1 followed by a Sigmoid Layer
-
-    :argument in_size: The input size of the layer
-    """
-
-    def __init__(self, in_size: int):
-        super(SingleClassBinaryOutput, self).__init__(in_size, 1)
-
-    @property
-    def output_size(self) -> int:
-        return 1
-
-
 class TensorDefinitionHead(Layer):
     @staticmethod
     def _val_has_bin_or_con_or_cat_features(tensor_def: TensorDefinition):

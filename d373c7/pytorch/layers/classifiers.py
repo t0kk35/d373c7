@@ -7,10 +7,9 @@ import torch.nn as nn
 from .common import Layer
 from .base import PositionalEncoding, PositionalEmbedding, ConvolutionalBodyBase1d
 from collections import OrderedDict
-from typing import List, Union, Tuple
+from typing import List, Tuple
 
 
-# New Generator Classes
 class TailBinary(Layer):
     """Layer that runs a sequence of Linear/Drop-out/Activation operations. The definition will determine how many
     layers there are.
@@ -117,51 +116,6 @@ class ConvolutionalBody1d(ConvolutionalBodyBase1d):
             # Add full last original input entry
             y = torch.cat([y, x[:, -1, :]], dim=1)
         return y
-
-# New Generator Classes
-
-
-class BodyMulti(Layer):
-    def __init__(self, head: Layer, layers: List[Union[Layer, None]]):
-        super(BodyMulti, self).__init__()
-        self.layers = nn.ModuleList(layers)
-        self._output_size = sum([h.output_size if ly is None else ly.output_size for ly, h in zip(layers, head.heads)])
-
-    def forward(self, x: List[torch.Tensor]) -> torch.Tensor:
-        # Run head through Layers if the layer is NOT None (i.e. it's a series) else just return head
-        x = [xi if ly is None else ly(xi) for ly, xi in zip(self.layers, x)]
-        # Concatenate the whole bunch into one big rank 2 tensor.
-        x = torch.cat(x, dim=1)
-        return x
-
-    @property
-    def output_size(self) -> int:
-        return self._output_size
-
-
-class BodySequential(Layer):
-    def __init__(self, in_size: int, layers: List[Layer]):
-        super(BodySequential, self).__init__()
-        self._in_size = in_size
-        self._out_size = layers[-1].output_size
-        self.layers = nn.Sequential(OrderedDict({f'seq_{i:02d}': l for i, l in enumerate(layers)}))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.layers(x)
-        return x
-
-    @property
-    def output_size(self) -> int:
-        return self._out_size
-
-
-class BodyWithAttention(BodySequential):
-    def __init__(self, in_size, attention: Layer, layers: List[Layer]):
-        super(BodyWithAttention, self).__init__(in_size, [attention]+layers)
-
-    def attention_weights(self, x: torch.Tensor) -> torch.Tensor:
-        _, w = self.layers[0](x, return_weights=True)
-        return w
 
 
 class TransformerBody(Layer):

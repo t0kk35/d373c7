@@ -313,3 +313,22 @@ class TensorDefinitionMulti:
             return None
         else:
             return tds[0]
+
+    @property
+    def label_index(self) -> int:
+        """Return the 'Learning Category' index of the label in the TensorDefinitionMulti
+
+        :return: The index at which the Label should normally be found in for instance a NumpyList
+        """
+        label_td = self.label_tensor_definition
+        if label_td is None:
+            raise TensorDefinitionException(
+                f'Could not find a TensorDefinition containing a {LEARNING_CATEGORY_LABEL}. Can not determine index'
+            )
+        off_sets = [0]
+        for td in self.tensor_definitions:
+            off_sets.append(len(td.learning_categories) + off_sets[-1])
+        off_sets = off_sets[:-1]
+        label_index = label_td.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        label_index += off_sets[self.tensor_definitions.index(label_td)]
+        return label_index

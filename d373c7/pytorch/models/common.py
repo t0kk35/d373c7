@@ -12,6 +12,7 @@ from ..layers.base import TensorDefinitionHead
 from ..loss import _LossBase
 from ..optimizer import _Optimizer, AdamWOptimizer
 from ...features.tensor import TensorDefinition, TensorDefinitionMulti
+from ...features import FeatureCategorical, LEARNING_CATEGORY_LABEL
 from collections import OrderedDict
 from typing import List, Any, Optional, Type, Union, Tuple
 from math import log, ceil, floor
@@ -126,7 +127,7 @@ class _Model(nn.Module):
         raise NotImplemented(f'History getter not implemented in base _History class. Must be implemented by children')
 
     def extra_repr(self) -> str:
-        return f'Number of parameters : {self.num_parameters}'
+        return f'Number of parameters : {self.num_parameters}. Loss : {self.loss_fn}'
 
 
 class _ModelManager:
@@ -209,18 +210,77 @@ class _ModelGenerated(_Model):
     It also has some common helper functions.
 
     Args:
+        tensor_def: A TensorDefinitionMulti object. Needed to know how the set up and use the heads of the model.
         defaults: A ModelDefaults object containing the defaults to be used.
-        loss_fn: The loss function to use.
     """
-    def __init__(self, defaults: ModelDefaults, loss_fn: _LossBase):
+    def __init__(self, tensor_def: TensorDefinitionMulti, defaults: ModelDefaults):
         super(_ModelGenerated, self).__init__(defaults)
-        self._loss_fn = loss_fn
+        self.val_td_is_inference_ready(tensor_def)
+        self._loss_fn = None
+        self._tensor_def = self.val_is_td_multi(tensor_def)
+        self.val_td_is_inference_ready(self._tensor_def)
+        self._x_indexes = []
+        self._head_indexes = []
 
+    @property
     def loss_fn(self) -> _LossBase:
+        if self._loss_fn is None:
+            raise PyTorchModelException(
+                f'Can not get loss function. The child model has not set a loss function. This is bad....'
+            )
         return self._loss_fn
+
+    def set_loss_fn(self, loss_fn: _LossBase):
+        self._loss_fn = loss_fn
 
     def optimizer(self, lr=None, wd=None) -> _Optimizer:
         return AdamWOptimizer(self, lr, wd)
+
+    def set_up_heads(self, defaults: ModelDefaults, tds: List[TensorDefinition], streams: List[_ModelStream]):
+        x_offset = 0
+        # Add a head layer to each stream.
+        for td, s in zip(tds, streams):
+            head = self.create_head(td, defaults)
+            self._x_indexes.extend([x+x_offset for x in head.x_indexes])
+            self._head_indexes.append([x+x_offset for x in head.x_indexes])
+            x_offset = self._x_indexes[-1] + 1
+            s.add(td.name, head, head.output_size)
+
+    def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
+        ds = [ds[x] for x in self._x_indexes]
+        return ds
+
+    @property
+    def head_indexes(self) -> List[Tuple[int]]:
+        """Method that returns the x-indexes for each of the heads in this model. The x-indexes are the indexes of the
+        input dataset that correspond to a specific head.
+
+        :return: A list of int Tuples containing the x-indexes for each of the heads. There is a list entry per
+            stream/tensor_definition. Within the list there is a tuple of int contain indexes.
+        """
+        return self._head_indexes
+
+    @property
+    def tensor_definition(self) -> TensorDefinitionMulti:
+        """Property Method that returns the TensorDefinitionMulti object used to create this Generated Model
+
+        :return: A TensorDefinitionMulti object which was used to create this model.
+        """
+        return self._tensor_def
+
+    def embedding_weight(self, feature: FeatureCategorical, as_numpy=False) -> torch.Tensor:
+        """Return the 'embedding weights' of a feature. This method returns the tensor containing the weights from the
+        'head' layer. It will look for the input feature across all head layers of the model.
+
+        :param: feature: The feature for which to get the embedding weights. It must be a 'FeatureCategorical'
+        :param: as_numpy: Boolean flag indicating if the returned value is numpy object. Default is False in which case
+        the return is a torch.Tensor
+        """
+        i = [i for i, td in enumerate(self.tensor_definition.tensor_definitions) if feature in td.features]
+        w = self.heads[i[0]].embedding_weight(feature)
+        if as_numpy:
+            w = w.cpu().detach().numpy()
+        return w
 
     @staticmethod
     def is_param_defined(key: str, kwargs: dict) -> bool:
@@ -306,7 +366,23 @@ class _ModelGenerated(_Model):
         else:
             if not isinstance(param, int):
                 raise PyTorchModelException(
-                    f'Expected parameter with name {key} to be of type {str.__name__}'
+                    f'Expected parameter with name {key} to be of type {int.__name__}'
+                )
+            return param
+
+    @staticmethod
+    def get_float_parameter(key: str, kwargs: dict, default=None):
+        param = kwargs.get(key, None)
+        if param is None and default is None:
+            raise PyTorchModelException(
+                f'Could not find mandatory parameter with name {key}. Please provide a named parameter with this name'
+            )
+        if param is None:
+            return default
+        else:
+            if not isinstance(param, float):
+                raise PyTorchModelException(
+                    f'Expected parameter with name {key} to be of type {float.__name__}'
                 )
             return param
 
@@ -321,6 +397,18 @@ class _ModelGenerated(_Model):
         mx = defaults.get_int('emb_max_dim')
         do = defaults.get_float('emb_dropout')
         return TensorDefinitionHead(tensor_def, do, mn, mx)
+
+    @staticmethod
+    def td_to_multi(tensor_def: Union[TensorDefinition, TensorDefinitionMulti]) -> TensorDefinitionMulti:
+        if isinstance(tensor_def, TensorDefinitionMulti):
+            return tensor_def
+        elif isinstance(tensor_def, TensorDefinition):
+            return TensorDefinitionMulti([tensor_def])
+        else:
+            raise (
+                f'Expected an instance of either "TensorDefinition" of "TensorDefinitionMulti". ' +
+                f'Got {tensor_def.__class__}'
+            )
 
     @staticmethod
     def val_is_td_multi(tensor_def: Union[TensorDefinition, TensorDefinitionMulti]) -> TensorDefinitionMulti:
@@ -339,35 +427,37 @@ class _ModelGenerated(_Model):
                     f'for inference by using an engine method with the "inference=False" set'
                 )
 
+    @staticmethod
+    def label_tensor_def(tensor_def: TensorDefinitionMulti) -> List[TensorDefinition]:
+        """ Method to find the tensor definition that holds the label
 
-# TODO can be removed
-# class TensorHeadModel(_Model):
-#     def __init__(self, tensor_def: TensorDefinition, defaults: ModelDefaults):
-#         super(TensorHeadModel, self).__init__(defaults)
-#         mn = self.defaults.get_int('emb_min_dim')
-#         mx = self.defaults.get_int('emb_max_dim')
-#         do = self.defaults.get_float('emb_dropout')
-#         self._tensor_def = tensor_def
-#         self.head = TensorDefinitionHead(tensor_def, do, mn, mx)
-#
-#     @property
-#     def tensor_definition(self):
-#         return self._tensor_def
-#
-#     def forward(self, x):
-#         x = self.head(x)
-#         return x
-#
-#     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
-#         x = [ds[x] for x in self.head.x_indexes]
-#         return x
-#
-#     def embedding_weights(self, feature: FeatureIndex, as_numpy: bool = False):
-#         w = self.head.embedding_weight(feature)
-#         if as_numpy:
-#             w = w.cpu().detach().numpy()
-#         return w
-#
-#     @property
-#     def output_size(self) -> int:
-#         return self.head.output_size
+        :param tensor_def: A TensorDefinitionMulti Object.
+        :return: The tensor_definition that hold the labels.
+        """
+        label_td = [td for td in tensor_def.tensor_definitions if LEARNING_CATEGORY_LABEL in td.learning_categories]
+        if len(label_td) == 0:
+            raise PyTorchModelException(
+                f'Could not find the label tensor. A classifier model needs a label. Please make sure there is a ' +
+                f'Tensor Definition that has a features of type {LEARNING_CATEGORY_LABEL.name}'
+            )
+        return label_td
+
+    @property
+    def heads(self) -> List[TensorDefinitionHead]:
+        """Returns the heads of the model. This is the first layer of each stream which is in the model. This method
+        will raise an exception if no head layers were found.
+
+        :return: A layer object which is the 'head' layer of the model
+        """
+        # A stream can be a single layer or an nn.Sequential.
+        hd = [s[0] if hasattr(s, "__getitem__") else s for s in self.streams]
+        if len(hd) == 0:
+            raise PyTorchModelException(
+                f'Did not find any head layer in the streams. Aborting...'
+            )
+        for h in hd:
+            if not isinstance(h, TensorDefinitionHead):
+                raise PyTorchModelException(
+                    f'Expected the first layer to be an instance of TensorDefinitionHead. But got <{h}>'
+                )
+        return hd

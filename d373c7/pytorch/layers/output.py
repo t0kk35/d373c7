@@ -10,17 +10,6 @@ from ...features.common import FeatureCategorical
 from ...features.tensor import TensorDefinition
 
 
-class SigmoidOut(Layer):
-    """Output layer that only applies a sigmoid to the input tensor"""
-    def __init__(self):
-        super(SigmoidOut, self).__init__()
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        x = self.sigmoid(x)
-        return x
-
-
 class _CategoricalLogSoftmax(Layer):
     def __init__(self, tensor_def: TensorDefinition, input_rank: int, es_expr: str, use_mask=False):
         super(_CategoricalLogSoftmax, self).__init__()

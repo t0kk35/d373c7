@@ -121,7 +121,7 @@ class Trainer(_ModelManager):
         history = LRHistory(self._train_dl, lr_schedule, 5, 0.1, max_steps)
         # Run Loop
         with tqdm(total=min(max_steps, history.steps), desc=f'Finding LR in {max_steps} steps') as bar:
-            self._train_step(bar, self._model, self.device, self._train_dl, self.model.loss_fn(), o,
+            self._train_step(bar, self._model, self.device, self._train_dl, self.model.loss_fn, o,
                              history, lr_schedule)
         # Restore model and optimizer
         logger.info(f'Restoring model from {save_file}')
@@ -156,7 +156,7 @@ class Trainer(_ModelManager):
             pct_start=pct_start
         )
         # inspection PyUnresolvedReferences
-        return self._train(epochs, self.model.loss_fn(), o, scheduler)
+        return self._train(epochs, self.model.loss_fn, o, scheduler)
 
 
 class Tester(_ModelManager):
@@ -217,7 +217,7 @@ class Tester(_ModelManager):
         # Model to GPU
         label_index = self.model.label_index
         self.model.to(self._device)
-        scores = Tester._score_step(self.model, self._device, self._test_dl, self.model.loss_fn())
+        scores = Tester._score_step(self.model, self._device, self._test_dl, self.model.loss_fn)
         scores = torch.cat(scores, dim=0).cpu().numpy()
         lb = [ds[label_index] for ds in iter(self._test_dl)]
         lb = torch.squeeze(torch.cat(lb, dim=0)).cpu().numpy()

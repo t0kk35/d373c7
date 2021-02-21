@@ -222,16 +222,23 @@ class NumpyList:
             sliced = [sequence for sequence in self._numpy_list]
         return NumpyList(sliced)
 
-    def filter_label(self, tensor_def: TensorDefinition, label: Any) -> 'NumpyList':
+    def filter_label(self, tensor_def: [TensorDefinition, TensorDefinitionMulti], label: Any) -> 'NumpyList':
         """Method to filter a specific class from the labels. It can for instance be used to filter Fraud or Non-Fraud
 
-        :param tensor_def: The Tensor definition used to build the NumpyList
+        :param tensor_def: The TensorDefinition or TensorDefinitionMulti used to build the NumpyList
         :param label: The label value (class) we want to filter.
         :return: New filtered numpy list, filtered on the label value
         """
-        self._val_is_built_from(tensor_def)
-        NumpyList._val_single_label(tensor_def)
-        label_index = tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
+        if isinstance(tensor_def, TensorDefinitionMulti):
+            self.multi_is_built_from(tensor_def)
+            label_td = tensor_def.label_tensor_definition
+            NumpyList._val_single_label(label_td)
+            label_index = tensor_def.label_index
+        else:
+            self._val_is_built_from(tensor_def)
+            NumpyList._val_single_label(tensor_def)
+            label_index = tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
+
         labels = self._numpy_list[label_index]
         if len(labels.shape) == 2:
             labels = np.squeeze(labels)
