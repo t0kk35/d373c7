@@ -10,6 +10,7 @@ from collections import OrderedDict
 from typing import List, Tuple
 
 
+# TODO Remove and replace by the one in output
 class TailBinary(Layer):
     """Layer that runs a sequence of Linear/Drop-out/Activation operations. The definition will determine how many
     layers there are.

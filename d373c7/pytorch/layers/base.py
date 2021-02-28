@@ -14,6 +14,7 @@ from collections import OrderedDict
 from typing import List, Tuple, Union
 
 
+# TODO Remove
 class LinDropAct(Layer):
     """Layer that runs a sequence of Linear/Drop-out/Activation operations. The definition will determine how many
     layers there are.
@@ -33,7 +34,7 @@ class LinDropAct(Layer):
             ls.append(nn.Linear(prev_size, o_size))
             if dropout != 0:
                 ls.append(nn.Dropout(dropout))
-            ls.append(nn.ReLU(inplace=True))
+            ls.append(nn.ReLU())
             prev_size = o_size
         self._out_size = prev_size
         self.layers = nn.Sequential(*ls)

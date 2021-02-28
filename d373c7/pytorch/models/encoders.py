@@ -156,7 +156,6 @@ class AutoEncoderDefaults(ModelDefaults):
         self.set('conv_dec_bn_interval', bn_interval)
 
 
-# New Generator Class
 class GeneratedAutoEncoder(_ModelGenerated):
     def __init__(self, tensor_def: Union[TensorDefinition, TensorDefinitionMulti],
                  a_defaults=AutoEncoderDefaults(), **kwargs):
@@ -175,12 +174,11 @@ class GeneratedAutoEncoder(_ModelGenerated):
         self.streams = nn.ModuleList(
             [s.create() for s in streams]
         )
-        # Set-up label index
+        # Set-up label index. We only need this for testing. During testing we might want know if it was fraud or not.
         self._label_index = tensor_def_m.label_index
 
     def _add_encoder(self, stream: _ModelStream, tensor_def: TensorDefinition, kwargs: Dict,
                      defaults: AutoEncoderDefaults):
-
         if tensor_def.rank == 2:
             # We're not dealing with a series.
             latent_features = self.get_int_parameter('latent_features', kwargs)
@@ -280,9 +278,8 @@ class GeneratedAutoEncoder(_ModelGenerated):
         return AutoEncoderHistory(*args)
 
     def forward(self, x: List[torch.Tensor]):
-        # There should only be one stream.
-        x = self.streams[0](([x[i] for i in self.head_indexes[0]]))
-        return x
+        y = [s([x[i] for i in hi]) for hi, s in zip(self.head_indexes, self.streams)]
+        return y[0]
 
     @property
     def label_index(self) -> int:

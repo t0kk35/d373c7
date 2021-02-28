@@ -8,8 +8,55 @@ from math import sqrt
 from .common import Layer
 from ...features.common import FeatureCategorical
 from ...features.tensor import TensorDefinition
+from collections import OrderedDict
+from typing import List, Tuple
 
 
+class TailBinary(Layer):
+    """Layer that runs a sequence of Linear/Drop-out/Activation operations. The definition will determine how many
+    layers there are.
+    For instance definition = [(128,0.0),(64,0.0),(32.0.1) will create 3 Linear Layers of 128, 64 and 32 features
+    respectively. A dropout of 0.1 will be applied to the last layer.
+    After the linear layers it runs a final linear layer of output size to and a sigmoid, to come to a binary output.
+
+    :argument input_size: The size of the first layer. This must be the same as the output size of the previous layer
+    :argument definition: A List of Tuples. Each entry in the list will be turned into a layer. The Tuples must be
+    of type [int, float]. The int is the number of features in that specific layer, the float is the dropout rate at
+    that layer. If the dropout is 0.0 no dropout will be performed.
+    """
+    def __init__(self, input_size: int, definition: List[Tuple[int, float]], add_bn=True):
+        super(TailBinary, self).__init__()
+        ls = OrderedDict()
+        prev_size = input_size
+        for i, (o_size, dropout) in enumerate(definition[:-1]):
+            ls.update({f'tail_lin_{i+1:02d}': nn.Linear(prev_size, o_size)})
+            ls.update({f'tail_act_{i+1:02d}': nn.ReLU()})
+            if dropout != 0:
+                ls.update({f'tail_dropout_{i+1:02d}': nn.Dropout(dropout)})
+            prev_size = o_size
+        # Add batch norm is requested and there is more than 1 layer.
+        if add_bn and len(definition) > 1:
+            ls.update({f'tail_batch_norm': nn.BatchNorm1d(prev_size)})
+        # Add Last Binary layer
+        ls.update({f'tail_binary': nn.Linear(prev_size, definition[-1][0])})
+        ls.update({f'tail_bin_act': nn.Sigmoid()})
+        self.layers = nn.Sequential(ls)
+
+    @property
+    def output_size(self) -> int:
+        return 1
+
+    def forward(self, x: List[torch.Tensor]) -> torch.Tensor:
+        # If we received multiple Tensors, there were multiple streams, which we will concatenate before applying linear
+        if isinstance(x, List) and len(x) > 1:
+            x = torch.cat(x, dim=1)
+        else:
+            x = x[0]
+        return self.layers(x)
+
+
+# TODO, Think I'd like to make this a single class that uses the TensorDef to see if we have a 2 or 3 D tensor.
+# TODO 2. We will want to make this consistent with the Tail binary class and feed in a list of tensors.
 class _CategoricalLogSoftmax(Layer):
     def __init__(self, tensor_def: TensorDefinition, input_rank: int, es_expr: str, use_mask=False):
         super(_CategoricalLogSoftmax, self).__init__()
@@ -47,6 +94,11 @@ class _CategoricalLogSoftmax(Layer):
         nn.init.uniform_(self.f_bias, -bound, bound)
 
     def forward(self, x: torch.Tensor):
+        # If we received multiple Tensors, there were multiple streams, which we will concatenate before applying linear
+        if isinstance(x, List) and len(x) > 1:
+            x = torch.cat(x, dim=1)
+        elif isinstance(x, List):
+            x = x[0]
         x = torch.einsum(self.ein_sum_expression, x, self.f_weight)
         x = x + self.f_bias
         if self.mask is not None:
@@ -65,10 +117,6 @@ class CategoricalLogSoftmax1d(_CategoricalLogSoftmax):
             mask[:s+1, i] = 1.0
         self.register_buffer('mask', mask if use_mask else None)
         self.reset_parameters()
-
-    def forward(self, x: torch.Tensor):
-        x = _CategoricalLogSoftmax.forward(self, x)
-        return x
 
     def extra_repr(self) -> str:
         return f'max_dim={self.hidden_dim}, classes={self.class_dim}, use_mask={self.use_mask}'
