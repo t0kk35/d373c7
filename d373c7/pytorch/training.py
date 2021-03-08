@@ -46,11 +46,11 @@ class Trainer(_ModelManager):
         return r
 
     @staticmethod
-    def _remix(x: List[torch.Tensor], alpha: float) -> List[torch.Tensor]:
+    def _remix(x: List[torch.Tensor], remix_alpha: float) -> List[torch.Tensor]:
         # Create random Permutation index in range 0 -> length of the mini-batch.
         idx = torch.randperm(x[0].shape[0])
         # Create beta dist over shape of alpha and sample from it
-        mix = dist.Beta(alpha, alpha).sample()
+        mix = dist.Beta(remix_alpha, remix_alpha).sample()
         x = [(mix * t) + ((1 - mix) * t[idx]) for t in x]
         return x
 
