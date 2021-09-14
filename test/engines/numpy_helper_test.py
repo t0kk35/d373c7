@@ -204,12 +204,12 @@ class TestCreation(unittest.TestCase):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
-        fl = ft.FeatureLabelBinary('Fraud_Label', ff)
+        fl = ft.FeatureLabelBinary('Fraud_Label', ft.FEATURE_TYPE_INT_8, ff)
         tb = ft.TensorDefinition('base-features', [fa, ff])
         td = ft.TensorDefinition('derived-features', [fa, fl])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(tb, file, inference=False)
-            df = e.from_df(td, df, inference=False)
+            df = e.from_df(td, df, tb, inference=False)
             nl = e.to_numpy_list(td, df)
         rows = df[df['Fraud_Label'] == 0].index
         amounts = df[df['Fraud_Label'] == 0]['Amount']

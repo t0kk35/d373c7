@@ -3,18 +3,12 @@ Tensor Definition classes. For grouping features.
 (c) 2020 d373c7
 """
 from .common import LearningCategory, LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGORICAL, LEARNING_CATEGORY_LABEL
+from .common import LEARNING_CATEGORIES_MODEL
 from .common import LEARNING_CATEGORY_CONTINUOUS
-from .common import FeatureTypeNumerical, FeatureInferenceAttributes
+from .common import FeatureTypeNumerical, FeatureHelper
 from .base import Feature, FeatureIndex
 from .expanders import FeatureOneHot, FeatureExpander
 from typing import List, Union, Tuple
-
-LEARNING_CATEGORIES = [
-    LEARNING_CATEGORY_BINARY,
-    LEARNING_CATEGORY_CONTINUOUS,
-    LEARNING_CATEGORY_CATEGORICAL,
-    LEARNING_CATEGORY_LABEL
-]
 
 
 class TensorDefinitionException(Exception):
@@ -59,7 +53,8 @@ class TensorDefinition:
     def _val_duplicate_entries(self):
         if len(list(set(self.features))) != len(self.features):
             raise TensorDefinitionException(
-                f'Tensor definition has duplicate entries <{[f for f in self.features if self.features.count(f) > 1]}>'
+                f'Tensor definition has duplicate entries ' +
+                f' <{[f.name for f in self.features if self.features.count(f) > 1]}>'
             )
 
     def _val_not_empty(self):
@@ -69,15 +64,14 @@ class TensorDefinition:
             )
 
     def _val_has_numerical_features(self):
-        f = [f for f in self.features if isinstance(f.type, FeatureTypeNumerical)]
-        if len(f) == 0:
+        if len(FeatureHelper.filter_feature_type(FeatureTypeNumerical, self.features)) == 0:
             raise TensorDefinitionException(
-                f'Tensor definition <{self.name} has no numerical features. It is empty. Can not perform action'
+                f'Tensor definition <{self.name} has no numerical features. Can not perform action'
             )
 
     def _val_base_feature_overlap(self):
-        fi = set([f.base_feature for f in self.features if isinstance(f, FeatureIndex)])
-        fo = set([f.base_feature for f in self.features if isinstance(f, FeatureOneHot)])
+        fi = set([f.base_feature for f in FeatureHelper.filter_feature(FeatureIndex, self.features)])
+        fo = set([f.base_feature for f in FeatureHelper.filter_feature(FeatureOneHot, self.features)])
         s = fi.intersection(fo)
         if len(s) != 0:
             raise TensorDefinitionException(
@@ -165,9 +159,11 @@ class TensorDefinition:
 
     @property
     def embedded_features(self) -> List[Feature]:
-        """Function which returns all features embedded in the base features + the base features themselves
+        """
+        Function which returns all features embedded in the base features + the base features themselves. It effectively
+        returns all features referenced in this Tensor Definition.
 
-        :return: A list of features embedded in the base features + the base features
+        @return: A list of features embedded in the base features + the base features
         """
         base_features = self._features_list
         embedded_features = [features.embedded_features for features in base_features]
@@ -176,30 +172,23 @@ class TensorDefinition:
 
     @property
     def inference_ready(self) -> bool:
-        """Method that return True if the Tensor is ready for inference. It means it knows it's own rank and all
-        embedded features have their inference attributes set.
+        """Method that return True if the Tensor is ready for inference. It means  all embedded features are ready fpr
+        inference, they either have no inference attributes or their inference attributes are set.
 
         :return: Bool. True or False Indicating if the tensor is ready or not for inference.
         """
-        if self._rank is None:
-            return False
-        else:
-            for f in self.embedded_features:
-                if isinstance(f, FeatureInferenceAttributes):
-                    if not f.inference_ready:
-                        return False
-        return True
+        return all([f.inference_ready for f in self.embedded_features])
 
     @property
     def learning_categories(self) -> List[LearningCategory]:
-        res = [lc for lc in LEARNING_CATEGORIES if len(self.filter_features(lc)) > 0]
+        res = [lc for lc in LEARNING_CATEGORIES_MODEL if len(self.filter_features(lc)) > 0]
         return res
 
     @staticmethod
     def _expand_features(features: List[Feature]) -> List[Feature]:
         r = []
         for f in features:
-            if isinstance(f, FeatureExpander):
+            if FeatureHelper.is_feature(f, FeatureExpander):
                 r.extend(f.expand())
             else:
                 r.append(f)
@@ -207,21 +196,23 @@ class TensorDefinition:
 
     @property
     def highest_precision_feature(self) -> Feature:
-        """Return the highest precision (numerical) feature in this Tensor Definition.
+        """
+        Return the highest precision (numerical) feature in this Tensor Definition.
 
         :return: The feature with the highest precision
         """
         self._val_has_numerical_features()
-        t = [f for f in self.features if isinstance(f.type, FeatureTypeNumerical)]
+        t = FeatureHelper.filter_feature_type(FeatureTypeNumerical, self.features)
         t.sort(key=lambda x: x.type.precision)
-        # Last has biggest precision
+        # Last one has biggest precision
         return t[-1]
 
     def remove(self, feature: Feature) -> None:
         self._features_list.remove(feature)
 
     def filter_features(self, category: LearningCategory, expand=False) -> List[Feature]:
-        """Filter features in this Tensor Definition according to a Learning category.
+        """
+        Filter features in this Tensor Definition according to a Learning category.
         NOTE that with expand 'True', the Tensor Definition must be ready for inference.
 
         :param category: The LearningCategory to filter out.
@@ -278,6 +269,13 @@ class TensorDefinition:
         """
         return self.filter_features(LEARNING_CATEGORY_LABEL, expand)
 
+    def features_not_inference_ready(self) -> List[Feature]:
+        """List features of this TensorDefinition which are not ready for inference
+
+        :return: A list of features that returned False to the inference_ready call
+        """
+        return [f for f in self.embedded_features if f.inference_ready]
+
 
 class TensorDefinitionMulti:
     """Class for Multi-Head TensorDefinitions. They basically hold multiple Tensor Definitions.
@@ -325,7 +323,7 @@ class TensorDefinitionMulti:
             raise TensorDefinitionException(
                 f'Could not find a TensorDefinition containing a {LEARNING_CATEGORY_LABEL}. Can not determine index'
             )
-        off_sets = [0]
+        off_sets: List[int] = [0]
         for td in self.tensor_definitions:
             off_sets.append(len(td.learning_categories) + off_sets[-1])
         off_sets = off_sets[:-1]

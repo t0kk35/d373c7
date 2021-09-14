@@ -2,99 +2,56 @@
 Definition of expander features.
 (c) 2020 d373c7
 """
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import List
-from ..features.common import LEARNING_CATEGORY_BINARY, LearningCategory
-from ..features.common import Feature, FeatureInferenceAttributes, FeatureTypeString, FeatureTypeInteger
-from ..features.common import FeatureDefinitionException, FEATURE_TYPE_INT_8
+
+from ..common import enforce_types
+from .common import LearningCategory, LEARNING_CATEGORY_BINARY
+from ..features.common import FeatureWithBaseFeature
 from ..features.common import not_implemented
 from ..features.base import FeatureVirtual
 
 
-class FeatureExpander(FeatureInferenceAttributes):
-    """ Base class for expander features. Expander features expand when they are built. One feature in an input
+@enforce_types
+@dataclass(unsafe_hash=True)
+class FeatureExpander(FeatureWithBaseFeature, ABC):
+    """
+    Base class for expander features. Expander features expand when they are built. One feature in an input
     can turn into multiple features in output. For instance a one_hot encoded feature.
     """
-    @property
-    def base_feature(self) -> Feature:
-        return not_implemented(self)
+    expand_names: List[str] = field(default=None, init=False, hash=False)
 
-    @property
-    def expand_names(self) -> List[str]:
-        return not_implemented(self)
-
-    @expand_names.setter
-    def expand_names(self, names: List[str]):
-        pass
-
+    @abstractmethod
     def expand(self) -> List[FeatureVirtual]:
         return not_implemented(self)
 
 
+@enforce_types
+@dataclass(unsafe_hash=True)
 class FeatureOneHot(FeatureExpander):
-    """A One Hot feature. This will take a base feature and one hot encode it. It will create as many additional
+    """
+    A One Hot feature. This will take a base feature and one hot encode it. It will create as many additional
     virtual features as there are input values. The virtual feature will have a specific name for instance
     <base_feature>__<input_value>
-
-    Args:
-        name: A name for the One Hot Feature
-        base_feature: The base feature which will be one hot encoded.
     """
-    @staticmethod
-    def _val_type_is_or_int_string(base_feature: Feature):
-        if not isinstance(base_feature.type, FeatureTypeString) and \
-                not isinstance(base_feature.type, FeatureTypeInteger):
-            raise FeatureDefinitionException(
-                f'The base feature parameter of a one-hot feature must be a string or integer type. '
-                f'Found [{type(base_feature.type)}]'
-            )
-
-    def __init__(self, name, base_feature: Feature):
-        FeatureOneHot._val_type_is_or_int_string(base_feature)
-        # Use smallest possible type. Can only take 0 or 1 as value
-        Feature.__init__(self, name, FEATURE_TYPE_INT_8)
-        self._base_feature = base_feature
-        self._e_names = None
-
-    def __eq__(self, other):
-        if isinstance(other, self.__class__):
-            return self.name == other.name and \
-                   self.base_feature == other.base_feature and \
-                   self.type == other.type
-        else:
-            return False
-
-    def __hash__(self):
-        return hash(self.name) + hash(self.base_feature) + hash(self.type)
-
-    def __repr__(self):
-        return f'OneHot Feature. {self.name}/{self.type}. Base {self.base_feature.name}'
-
-    @property
-    def base_feature(self) -> Feature:
-        return self._base_feature
-
-    @property
-    def embedded_features(self) -> List[Feature]:
-        return [self._base_feature]
-
-    @property
-    def expand_names(self) -> List[str]:
-        return self._e_names
-
-    @expand_names.setter
-    def expand_names(self, names: List[str]):
-        self._e_names = names
+    def __post_init__(self):
+        self.val_int_type()
+        self.val_base_feature_is_string_or_integer()
+        # By default return set embedded features to be the base feature.
+        self.embedded_features = self.get_base_and_base_embedded_features()
 
     def expand(self) -> List[FeatureVirtual]:
         if self.expand_names is not None:
-            return [FeatureVirtual(name=n, f_type=FEATURE_TYPE_INT_8) for n in self.expand_names]
+            return [FeatureVirtual(name=n, type=self.type) for n in self.expand_names]
         else:
             return []
 
     @property
     def inference_ready(self) -> bool:
-        return self._e_names is not None
+        return self.expand_names is not None
 
     @property
     def learning_category(self) -> LearningCategory:
+        # Treat One Hot Features as 'Binary' learning category. Even though they are encoded as integers.
         return LEARNING_CATEGORY_BINARY

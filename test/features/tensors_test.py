@@ -15,7 +15,7 @@ class TestTensorCreate(unittest.TestCase):
         self.assertIsInstance(t, ft.TensorDefinition, f'TensorDefinition creation failed')
         self.assertEqual(t.name, name_t, f'Tensor Definition name not correct. Got {name_t}')
         self.assertListEqual([f1, f2], t.features, f'Tensor def feature list incorrect {t.features}')
-        self.assertEqual(t.inference_ready, False, f'Tensor should not be ready for inference at this point')
+        self.assertEqual(t.inference_ready, True, f'Tensor should ready for inference, feature have no inf attributes')
         with self.assertRaises(ft.TensorDefinitionException):
             _ = t.rank
 
@@ -30,7 +30,7 @@ class TestTensorCreate(unittest.TestCase):
         name_t = 'test-tensor'
         f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
         f2 = ft.FeatureIndex('test-feature-2', ft.FEATURE_TYPE_INT_8, f1)
-        f3 = ft.FeatureOneHot('test-feature-3', f1)
+        f3 = ft.FeatureOneHot('test-feature-3', ft.FEATURE_TYPE_INT_8, f1)
         with self.assertRaises(ft.TensorDefinitionException):
             _ = ft.TensorDefinition(name_t, [f1, f2, f3])
 
@@ -54,11 +54,11 @@ class TestTensorCreate(unittest.TestCase):
         f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
         f2 = ft.FeatureIndex('test-feature-2', ft.FEATURE_TYPE_INT_8, f1)
         f3 = ft.FeatureSource('test-feature-3', ft.FEATURE_TYPE_STRING)
-        f4 = ft.FeatureOneHot('test-feature-4', f3)
+        f4 = ft.FeatureOneHot('test-feature-4', ft.FEATURE_TYPE_INT_8, f3)
         f5 = ft.FeatureSource('test-feature-5', ft.FEATURE_TYPE_FLOAT)
         f6 = ft.FeatureNormalizeScale('test-feature-6', ft.FEATURE_TYPE_FLOAT, f5)
         f7 = ft.FeatureNormalizeStandard('test-feature-7', ft.FEATURE_TYPE_FLOAT, f5)
-        f8 = ft.FeatureLabelBinary('test-feature-8', f2)
+        f8 = ft.FeatureLabelBinary('test-feature-8', ft.FEATURE_TYPE_INT_8, f2)
         t = ft.TensorDefinition(name_t, [f1, f2, f3, f4, f5, f6, f7, f8])
         self.assertEqual(len(t.learning_categories), 4, f'Should be 4 categories. Got {len(t.learning_categories)}')
         self.assertListEqual(t.categorical_features(), [f2])
@@ -95,7 +95,7 @@ class TestTensorMultiCreate(unittest.TestCase):
         name_t2 = 'test-tensor-2'
         f3 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_FLOAT)
         f4 = ft.FeatureSource('test-feature-2', ft.FEATURE_TYPE_STRING)
-        f5 = ft.FeatureLabelBinary('test-feature-3', f3)
+        f5 = ft.FeatureLabelBinary('test-feature-3', ft.FEATURE_TYPE_INT_8, f3)
         t2 = ft.TensorDefinition(name_t2, [f3, f4, f5])
         t3 = ft.TensorDefinitionMulti([t1, t2])
         self.assertIsInstance(t3, ft.TensorDefinitionMulti, f'Creation failed. Not correct type {type(t3)}')
@@ -107,12 +107,12 @@ class TestTensorMultiCreate(unittest.TestCase):
     def test_creation_bad(self):
         name_t1 = 'test-tensor-1'
         f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_FLOAT)
-        f2 = ft.FeatureLabelBinary('test-feature-3', f1)
+        f2 = ft.FeatureLabelBinary('test-feature-3', ft.FEATURE_TYPE_INT_8, f1)
         t1 = ft.TensorDefinition(name_t1, [f1, f2])
         name_t2 = 'test-tensor-2'
         f3 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_FLOAT)
         f4 = ft.FeatureSource('test-feature-2', ft.FEATURE_TYPE_STRING)
-        f5 = ft.FeatureLabelBinary('test-feature-3', f3)
+        f5 = ft.FeatureLabelBinary('test-feature-3', ft.FEATURE_TYPE_INT_8, f3)
         t2 = ft.TensorDefinition(name_t2, [f3, f4, f5])
         # 2 TensorDefinitions with labels
         with self.assertRaises(ft.TensorDefinitionException):
