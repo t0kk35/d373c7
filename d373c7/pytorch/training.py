@@ -7,6 +7,7 @@ import os
 import numpy as np
 import torch
 import torch.utils.data as data
+import torch.distributions as dist
 from tqdm import tqdm
 from .common import _History
 from .loss import _LossBase
@@ -45,8 +46,17 @@ class Trainer(_ModelManager):
         return r
 
     @staticmethod
+    def _remix(x: List[torch.Tensor], remix_alpha: float) -> List[torch.Tensor]:
+        # Create random Permutation index in range 0 -> length of the mini-batch.
+        idx = torch.randperm(x[0].shape[0])
+        # Create beta dist over shape of alpha and sample from it
+        mix = dist.Beta(remix_alpha, remix_alpha).sample()
+        x = [(mix * t) + ((1 - mix) * t[idx]) for t in x]
+        return x
+
+    @staticmethod
     def _train_step(bar: tqdm, model: _Model, device: torch.device, train_dl: data.DataLoader,
-                    loss_fn: _LossBase, optimizer: _Optimizer, history: _History, step_scheduler):
+                    loss_fn: _LossBase, optimizer: _Optimizer, history: _History, step_scheduler, remix_alpha: float):
         model.train()
         for i, ds in enumerate(train_dl):
             history.start_step()
@@ -54,6 +64,8 @@ class Trainer(_ModelManager):
             ds = [d.to(device, non_blocking=True) for d in ds]
             optimizer.zero_grad()
             x = Trainer._get_x(model, ds)
+            if remix_alpha is not None:
+                x = Trainer._remix(x, remix_alpha)
             y = Trainer._get_y(model, ds)
             out = model(x)
             loss = loss_fn(out, y)
@@ -92,7 +104,8 @@ class Trainer(_ModelManager):
                     # print(f'Validation step ended early')
                     break
 
-    def _train(self, epochs: int, loss_fn: _LossBase, o: _Optimizer, step_scheduler) -> Tuple[_History, _History]:
+    def _train(self, epochs: int, loss_fn: _LossBase, o: _Optimizer, step_scheduler,
+               remix_alpha: float) -> Tuple[_History, _History]:
         self._model.to(self._device)
         for epoch in range(epochs):
             self._train_history.start_epoch()
@@ -100,7 +113,7 @@ class Trainer(_ModelManager):
             with tqdm(total=self._train_history.steps+self._val_history.steps,
                       desc=f'Epoch {epoch+1:03d}/{epochs:03d}') as bar:
                 Trainer._train_step(bar, self._model, self._device, self._train_dl, loss_fn, o,
-                                    self._train_history, step_scheduler)
+                                    self._train_history, step_scheduler, remix_alpha)
                 Trainer._validation_step(bar, self._model, self._device, self._val_dl, loss_fn, self._val_history)
                 self._train_history.end_epoch()
                 self._val_history.end_epoch()
@@ -122,7 +135,7 @@ class Trainer(_ModelManager):
         # Run Loop
         with tqdm(total=min(max_steps, history.steps), desc=f'Finding LR in {max_steps} steps') as bar:
             self._train_step(bar, self._model, self.device, self._train_dl, self.model.loss_fn, o,
-                             history, lr_schedule)
+                             history, lr_schedule, False)
         # Restore model and optimizer
         logger.info(f'Restoring model from {save_file}')
         self.load(save_file)
@@ -130,7 +143,8 @@ class Trainer(_ModelManager):
         return history
 
     def train_one_cycle(self, epochs: int, max_lr: float, wd: float = None, pct_start: float = 0.3,
-                        div_factor: float = 25, final_div_factor: float = 1e4) -> Tuple[_History, _History]:
+                        div_factor: float = 25, final_div_factor: float = 1e4,
+                        remix_alpha: float = None) -> Tuple[_History, _History]:
         """Train a model with the one cycle policy as explained by Leslie Smith; https://arxiv.org/pdf/1803.09820.pdf.
         One cycle training normally has faster convergence. It basically first increases the learning rate to a
         maximum specified rate and then gradually decreases it to a minimum.
@@ -141,6 +155,7 @@ class Trainer(_ModelManager):
         :param pct_start: The percentage of the cycle during which the learning rate is increased. Default = 0.3
         :param div_factor: Defines the initial learning rate as max_lr/div_factor. Default = 25
         :param final_div_factor: Defined the final learning rate as initial_lr/final_div_factor. Default = 0.0001
+        :param remix_alpha: Float value. If set, then the training set will apply remixing
         :return: 2 Objects of type LR_History. The contain the training statistics for the training and validation steps
             respectively.
         """
@@ -156,7 +171,7 @@ class Trainer(_ModelManager):
             pct_start=pct_start
         )
         # inspection PyUnresolvedReferences
-        return self._train(epochs, self.model.loss_fn, o, scheduler)
+        return self._train(epochs, self.model.loss_fn, o, scheduler, remix_alpha)
 
 
 class Tester(_ModelManager):
