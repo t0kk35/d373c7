@@ -38,9 +38,14 @@ class LinearEncoder(Layer):
         # Add Last Binary layer. The Latent Layer
         if add_bn:
             ls.update({f'enc_batch_norm': nn.BatchNorm1d(prev_size)})
+        self._layer_definition = definition
         self._output_size = latent_features
         ls.update({f'enc_latent': nn.Linear(prev_size, self._output_size)})
         self.layers = nn.Sequential(ls)
+
+    @property
+    def layer_definition(self) -> List[Tuple[int, float]]:
+        return self._layer_definition
 
     @property
     def output_size(self) -> int:

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from ..common import enforce_types
 from ..features.common import Feature, FeatureDefinitionException
 from ..features.common import LearningCategory
+from abc import ABC
 from typing import List, Callable
 from inspect import signature, isfunction
 
@@ -14,14 +15,10 @@ from inspect import signature, isfunction
 logger = logging.getLogger(__name__)
 
 
-@enforce_types
 @dataclass(unsafe_hash=True)
-class FeatureExpression(Feature):
+class _ExpressionBased(Feature, ABC):
     """
-    Derived Feature. This is a Feature that will be built off of other features using a function. It can be used
-    to perform all sorts of custom operations on other features, such as adding, formatting, calculating ratio's etc...
-
-    The function passed to as expression must be available in the main Python Context
+    Base class for features that use and expression
     """
     expression: Callable = field(hash=False)
     param_features: List[Feature] = field(default_factory=list, hash=False)
@@ -59,16 +56,6 @@ class FeatureExpression(Feature):
                 f'The "expression" parameter for series expressions must be a function'
             )
 
-    def __post_init__(self):
-        # Run post init validation
-        self._val_parameters_is_features_list(self.param_features)
-        self._val_function_is_callable(self.expression, self.param_features)
-        # The parameters needed to run the function are the embedded features
-        self.embedded_features.extend(self.param_features)
-        for pf in self.param_features:
-            self.embedded_features.extend(pf.embedded_features)
-        self.embedded_features = list(set(self.embedded_features))
-
     @property
     def inference_ready(self) -> bool:
         # An expression feature has no inference attributes
@@ -86,6 +73,26 @@ class FeatureExpression(Feature):
     def learning_category(self) -> LearningCategory:
         # Should be the Learning category of the type of the Expression Feature.
         return self.type.learning_category
+
+
+@enforce_types
+@dataclass(unsafe_hash=True)
+class FeatureExpression(_ExpressionBased):
+    """
+    Derived Feature. This is a Feature that will be built off of other features using a function. It can be used
+    to perform all sorts of custom operations on other features, such as adding, formatting, calculating ratio's etc...
+
+    The function passed to as expression must be available in the main Python Context
+    """
+    def __post_init__(self):
+        # Run post init validation
+        self._val_parameters_is_features_list(self.param_features)
+        self._val_function_is_callable(self.expression, self.param_features)
+        # The parameters needed to run the function are the embedded features
+        self.embedded_features.extend(self.param_features)
+        for pf in self.param_features:
+            self.embedded_features.extend(pf.embedded_features)
+        self.embedded_features = list(set(self.embedded_features))
 
 
 @enforce_types
@@ -110,7 +117,7 @@ class FeatureFilter(FeatureExpression):
 
 @enforce_types
 @dataclass(unsafe_hash=True)
-class FeatureExpressionSeries(FeatureExpression):
+class FeatureExpressionSeries(_ExpressionBased):
     def __post_init__(self):
         # Run post init validation.
         self._val_expression_not_lambda()

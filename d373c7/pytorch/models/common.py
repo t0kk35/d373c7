@@ -14,7 +14,7 @@ from ..optimizer import _Optimizer, AdamWOptimizer
 from ...features.tensor import TensorDefinition, TensorDefinitionMulti
 from ...features import FeatureCategorical, LEARNING_CATEGORY_LABEL
 from collections import OrderedDict
-from typing import List, Any, Optional, Type, Union, Tuple
+from typing import List, Any, Optional, Type, Union, Tuple, Dict
 from math import log, ceil, floor
 
 
@@ -177,24 +177,24 @@ class _ModelStream:
     """
     def __init__(self, name: str, layer: Layer = None):
         self.name = name
-        self.layers = OrderedDict()
+        self._layers = OrderedDict()
         if layer is not None:
-            self.layers.update({name: layer})
+            self._layers.update({name: layer})
             self._out_size = layer.output_size
         else:
             self._out_size = -1
 
     def add(self, name: str, layer: Union[Layer, nn.Module], new_size: int):
-        self.layers.update({name: layer})
+        self._layers.update({name: layer})
         self._out_size = new_size
 
     def create(self) -> Union[nn.Sequential, Layer]:
         if len(self.layers) == 1:
             # There is just one layer, return the first item from the Dict.
-            return next(iter(self.layers.values()))
+            return next(iter(self._layers.values()))
         else:
             # There is more than one layer. Build a nn.Sequential.
-            return nn.Sequential(self.layers)
+            return nn.Sequential(self._layers)
 
     @property
     def out_size(self) -> int:
@@ -203,6 +203,10 @@ class _ModelStream:
                 f'Outsize has not been set on stream {self.name}. Can not get the out_size'
             )
         return self._out_size
+
+    @property
+    def layers(self) -> List[Layer]:
+        return list(self._layers.values())
 
 
 class _ModelGenerated(_Model):
@@ -250,6 +254,11 @@ class _ModelGenerated(_Model):
         ds = [ds[x] for x in self._x_indexes]
         return ds
 
+    def unfreeze(self):
+        for p in self.parameters():
+            p.requires_grad = True
+
+
     @property
     def head_indexes(self) -> List[Tuple[int]]:
         """Method that returns the x-indexes for each of the heads in this model. The x-indexes are the indexes of the
@@ -291,7 +300,7 @@ class _ModelGenerated(_Model):
             return True
 
     @staticmethod
-    def get_list_parameter(key: str, p_type: type, kwargs: dict, default=None):
+    def get_list_parameter(key: str, p_type: type, kwargs: dict, default=None) -> List:
         param = kwargs.get(key, None)
         if param is None and default is None:
             raise PyTorchModelException(
@@ -339,7 +348,7 @@ class _ModelGenerated(_Model):
             return param
 
     @staticmethod
-    def get_str_parameter(key: str, kwargs: dict, default=None):
+    def get_str_parameter(key: str, kwargs: dict, default=None) -> str:
         param = kwargs.get(key, None)
         if param is None and default is None:
             raise PyTorchModelException(
@@ -355,7 +364,7 @@ class _ModelGenerated(_Model):
             return param
 
     @staticmethod
-    def get_int_parameter(key: str, kwargs: dict, default=None):
+    def get_int_parameter(key: str, kwargs: dict, default=None) -> int:
         param = kwargs.get(key, None)
         if param is None and default is None:
             raise PyTorchModelException(
@@ -371,7 +380,7 @@ class _ModelGenerated(_Model):
             return param
 
     @staticmethod
-    def get_float_parameter(key: str, kwargs: dict, default=None):
+    def get_float_parameter(key: str, kwargs: dict, default=None) -> float:
         param = kwargs.get(key, None)
         if param is None and default is None:
             raise PyTorchModelException(
@@ -381,6 +390,22 @@ class _ModelGenerated(_Model):
             return default
         else:
             if not isinstance(param, float):
+                raise PyTorchModelException(
+                    f'Expected parameter with name {key} to be of type {float.__name__}'
+                )
+            return param
+
+    @staticmethod
+    def get_gen_model_parameter(key: str, kwargs: Dict, default=None) -> '_ModelGenerated':
+        param = kwargs.get(key, None)
+        if param is None and default is None:
+            raise PyTorchModelException(
+                f'Could not find mandatory parameter with name {key}. Please provide a named parameter with this name'
+            )
+        if param is None:
+            return default
+        else:
+            if not isinstance(param, _ModelGenerated):
                 raise PyTorchModelException(
                     f'Expected parameter with name {key} to be of type {float.__name__}'
                 )
@@ -461,3 +486,13 @@ class _ModelGenerated(_Model):
                     f'Expected the first layer to be an instance of TensorDefinitionHead. But got <{h}>'
                 )
         return hd
+
+    @staticmethod
+    def is_tensor_definition_head(module: nn.Module) -> TensorDefinitionHead:
+        if not isinstance(module, TensorDefinitionHead):
+            raise PyTorchModelException(
+                f'Was expecting to get a TensorDefinition instance. Got a <{module.__class__}>'
+            )
+        else:
+            return module
+        pass

@@ -12,7 +12,6 @@ from ..engines import NumpyList
 from .common import PyTorchTrainException
 from typing import List
 
-
 logger = logging.getLogger(__name__)
 
 

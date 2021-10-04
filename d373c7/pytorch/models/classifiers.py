@@ -6,7 +6,8 @@ import logging
 import torch
 import torch.nn as nn
 from .common import PyTorchModelException, ModelDefaults, _History, _ModelGenerated, _ModelStream
-from ..layers import LSTMBody, ConvolutionalBody1d, AttentionLastEntry
+from .encoders import GeneratedAutoEncoder
+from ..layers import LSTMBody, ConvolutionalBody1d, AttentionLastEntry, LinearEncoder, TensorDefinitionHead
 from ..layers import TransformerBody, TailBinary
 from ..loss import SingleLabelBCELoss
 from ...features import TensorDefinition, TensorDefinitionMulti
@@ -264,24 +265,66 @@ class GeneratedClassifier(_ModelGenerated):
         feature_td = [td for td in self._tensor_def.tensor_definitions if td not in label_td]
         streams = [_ModelStream(td.name) for td in feature_td]
 
-        # Set-up a head layer to each stream. This is done in the parent class.
-        self.set_up_heads(c_defaults, feature_td, streams)
+        if self.is_param_defined('transfer_from', kwargs):
+            # We're being asked to do transfer learning.
+            # TODO we'll need a bunch of validation here.
+            om = self.get_gen_model_parameter('transfer_from', kwargs)
+            logger.info(f'Transferring from model {om.__class__}')
+            # The Source model is an auto-encoder
+            if isinstance(om, GeneratedAutoEncoder):
+                self.set_up_heads(c_defaults, feature_td, streams)
+                # Copy and freeze the TensorDefinitionHead, this should normally be the first item.
+                for s, oms in zip(streams, om.streams):
+                    for sly in oms:
+                        if isinstance(sly, TensorDefinitionHead):
+                            src = self.is_tensor_definition_head(sly)
+                            trg = self.is_tensor_definition_head(s.layers[0])
+                            trg.copy_state_dict(src)
+                            trg.freeze()
+                            logger.info(f'Transferred and froze TensorDefinitionHead {trg.tensor_definition.name}')
+                        elif isinstance(sly, LinearEncoder):
+                            # If no linear layers defined then try and copy the encoder linear_layers
+                            if not self.is_param_defined('linear_layers', kwargs):
+                                linear_layers = sly.layer_definition
+                                # Add last layer. Because this is binary, it has to have size of 1.
+                                linear_layers.append((1, 0.0))
+                                tail = TailBinary(
+                                    sum(s.out_size for s in streams), linear_layers, c_defaults.linear_batch_norm
+                                )
+                                tail_state = tail.state_dict()
+                                # Get state of the target layer, remove last item. (popitem)
+                                source_state = list(sly.state_dict().values())
+                                for i, sk in enumerate(tail_state.keys()):
+                                    if i < 2:
+                                        tail_state[sk].copy_(source_state[i])
+                                # Load target Dict in the target layer.
+                                tail.load_state_dict(tail_state)
+                                for i, p in enumerate(tail.parameters()):
+                                    if i < 2:
+                                        p.requires_grad = False
+                                logger.info(f'Transferred and froze Linear Encoder layers {sly.layer_definition}')
+
+        else:
+            # Set-up a head layer to each stream. This is done in the parent class.
+            self.set_up_heads(c_defaults, feature_td, streams)
+            # Add Body to each stream.
+            for td, s in zip(feature_td, streams):
+                self._add_body(s, td, kwargs, c_defaults)
+            # Create tail.
+            linear_layers = self.get_list_parameter('linear_layers', int, kwargs)
+            # Add dropout parameter this will make a list of tuples of (layer_size, dropout)
+            linear_layers = [(i, c_defaults.inter_layer_drop_out) for i in linear_layers]
+            # Add last layer. Because this is binary, it has to have size of 1.
+            linear_layers.append((1, 0.0))
+            tail = TailBinary(sum(s.out_size for s in streams), linear_layers, c_defaults.linear_batch_norm)
+
         # Assume the last entry is the label
         self._y_index = self._x_indexes[-1] + 1
-
-        # Add Body to each stream.
-        for td, s in zip(feature_td, streams):
-            self._add_body(s, td, kwargs, c_defaults)
         self.streams = nn.ModuleList(
             [s.create() for s in streams]
         )
 
-        # Create tail
-        linear_layers = self.get_list_parameter('linear_layers', int, kwargs)
-        # Add dropout parameter this will make a list of tuples of (layer_size, dropout)
-        linear_layers = [(i, c_defaults.inter_layer_drop_out) for i in linear_layers]
-        self.tail = TailBinary(sum(s.out_size for s in streams), linear_layers, c_defaults.linear_batch_norm)
-
+        self.tail = tail
         # Last but not least, set-up the loss function
         self.set_loss_fn(SingleLabelBCELoss())
 

@@ -50,7 +50,7 @@ class Trainer(_ModelManager):
         # Create random Permutation index in range 0 -> length of the mini-batch.
         idx = torch.randperm(x[0].shape[0])
         # Create beta dist over shape of alpha and sample from it
-        mix = dist.Beta(remix_alpha, remix_alpha).sample()
+        mix = dist.Beta(remix_alpha+1, remix_alpha).sample_n(x[0].shape[0])
         x = [(mix * t) + ((1 - mix) * t[idx]) for t in x]
         return x
 
@@ -64,8 +64,6 @@ class Trainer(_ModelManager):
             ds = [d.to(device, non_blocking=True) for d in ds]
             optimizer.zero_grad()
             x = Trainer._get_x(model, ds)
-            if remix_alpha is not None:
-                x = Trainer._remix(x, remix_alpha)
             y = Trainer._get_y(model, ds)
             out = model(x)
             loss = loss_fn(out, y)

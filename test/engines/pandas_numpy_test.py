@@ -3,6 +3,7 @@ Unit Tests for PandasNumpy Engine
 (c) 2020 d373c7
 """
 import unittest
+import datetime as dt
 import numpy as np
 from datetime import timedelta
 from statistics import stdev
@@ -396,9 +397,15 @@ def test_expr(x: float) -> float:
     return x + 1
 
 
+def test_date_expr(x: int) -> pd.Timestamp:
+    y = pd.to_datetime(x)
+    y = y + timedelta(days=1)
+    return y
+
+
 class TestFeatureExpression(unittest.TestCase):
     """Test cases for Expression Feature"""
-    def test_exec_lambda_float(self):
+    def test_expr_lambda_float(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         fe = ft.FeatureExpression('AddAmount', ft.FEATURE_TYPE_FLOAT_32, lambda x: x+1, [fa])
@@ -406,11 +413,11 @@ class TestFeatureExpression(unittest.TestCase):
         td2 = ft.TensorDefinition('derived', [fe])
         with en.EnginePandasNumpy() as e:
             df1 = e.from_csv(td1, file, inference=False)
-            df2 = e.from_df(td2, df1, td1, inference=False)
+            df2 = e.from_csv(td2, file, inference=False)
         df1['Amount'] = df1['Amount'] + 1
         self.assertTrue(df1['Amount'].equals(df2['AddAmount']), f'Amounts should have been equal')
 
-    def test_exec_non_lambda_float(self):
+    def test_expr_non_lambda_float(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         fe = ft.FeatureExpression('AddAmount', ft.FEATURE_TYPE_FLOAT_32, test_expr, [fa])
@@ -418,9 +425,22 @@ class TestFeatureExpression(unittest.TestCase):
         td2 = ft.TensorDefinition('derived', [fe])
         with en.EnginePandasNumpy() as e:
             df1 = e.from_csv(td1, file, inference=False)
-            df2 = e.from_df(td2, df1, td1, inference=False)
+            df2 = e.from_csv(td2, file, inference=False)
         df1['Amount'] = df1['Amount'] + 1
         self.assertTrue(df1['Amount'].equals(df2['AddAmount']), f'Amounts should have been equal')
+
+    def test_expr_non_lambda_date(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fe = ft.FeatureExpression('Add1ToDate', ft.FEATURE_TYPE_DATE, test_date_expr, [fd])
+        td1 = ft.TensorDefinition('base', [fa, fd])
+        td2 = ft.TensorDefinition('derived', [fe])
+        with en.EnginePandasNumpy() as e:
+            df1 = e.from_csv(td1, file, inference=False)
+            df2 = e.from_csv(td2, file, inference=False)
+            df1['Date'] = df1['Date'] + timedelta(days=1)
+            self.assertTrue(df1['Date'].equals(df2['Add1ToDate']), f'Dates should have been equal')
 
 
 class TestReshape(unittest.TestCase):
@@ -527,6 +547,16 @@ class TestIsBuiltFrom(unittest.TestCase):
             self.assertEqual(npl.is_built_from(td2), False, f'Should have yielded False')
 
 
+def test_calc_delta(dates):
+    if isinstance(dates, pd.DataFrame):
+        res = dates.diff() / np.timedelta64(1, 'D')
+        res = res.fillna(0).abs()
+        return res
+    else:
+        # There was only 1 row
+        return 0
+
+
 class TestSeriesStacked(unittest.TestCase):
     def test_create(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
@@ -541,9 +571,10 @@ class TestSeriesStacked(unittest.TestCase):
         fl = ft.FeatureLabelBinary('Fraud_Label', ft.FEATURE_TYPE_INT_8, ff)
         td2 = ft.TensorDefinition('Derived', [fd, fr, fa, fi, fl])
         with en.EnginePandasNumpy() as e:
-            df = e.from_csv(td1, file, inference=False)
-            df = e.from_df(td2, df, td1, inference=False)
-#            s = e.to_series_stacked(td2, df, td1, fr, fd, 3)
+            s = e.to_series_stacked(td2, file, fr, fd, 3, inference=False)
+        self.assertTrue(td2.inference_ready, f'TensorDefinition should have been ready for inference')
+        self.assertEqual(td2.rank, 3, f'Rank of TensorDefinition should have been 3')
+        # TODO actually add tests
 
     def test_series_expression(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
@@ -552,15 +583,28 @@ class TestSeriesStacked(unittest.TestCase):
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         td1 = ft.TensorDefinition('Source', [fd, fr, fa, ff])
-        fe = ft.FeatureExpressionSeries('DoubleAmount', ft.FEATURE_TYPE_FLOAT_32, fn_double, [fa])
+        fe = ft.FeatureExpressionSeries('DateDelta', ft.FEATURE_TYPE_FLOAT_32, test_calc_delta, [fd])
         td2 = ft.TensorDefinition('Derived', [fe])
+        window = 3
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            # df = e.from_df(td2, df, td1, inference=False)
-            s = e.to_series_stacked(td2, df, td1, fr, fd, 3)
-
-        # TODO More tests
-        # Fail if data or key not available.
+            s = e.to_series_stacked(td2, file, fr, fd, window, inference=False)
+        self.assertTrue(td2.inference_ready, f'TensorDefinition should have been ready for inference')
+        self.assertEqual(td2.rank, 3, f'Rank of TensorDefinition should have been 3')
+        # Iterate over the card-id's
+        for c in df['Card'].unique():
+            # Filter by card, sort by date and add the time delta
+            f = df[df['Card'] == c]
+            f.sort_values(by=['Date'], inplace=True)
+            f['Delta'] = f['Date'].diff() / np.timedelta64(1, 'D')
+            f['Delta'] = f['Delta'].fillna(0).abs()
+            for i, (index, row) in enumerate(f.iterrows()):
+                # This will be a (1 x series x features) shape numpy, one single row of the series we created
+                n = s[index].lists[0]
+                for j, r in enumerate(range(window-1, max(window-i-2, -1), -1)):
+                    b = n[0, r, 0]
+                    v = f['Delta'].iloc[i-j]
+                    self.assertEqual(b, v, f'Problem for key {c} at row {i} for window position {r}')
 
 
 class TestGrouperFeature(unittest.TestCase):
@@ -729,7 +773,22 @@ class TestBuildEmbedded(unittest.TestCase):
         self.assertTrue(td1.inference_ready, f'Tensor Definition should have been ready for inference')
         self.assertEqual(td1.rank, 2, f'TensorDefinition should have Rank 2')
 
-    def test_derived_3_levels(self):
+    def test_derived_expander(self):
+        mcc = 'MCC'
+        mcc_oh = 'MCC_OH'
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fm = ft.FeatureSource(mcc, ft.FEATURE_TYPE_STRING)
+        fo = ft.FeatureOneHot(mcc_oh, ft.FEATURE_TYPE_INT_16, fm)
+        td1 = ft.TensorDefinition('Derived_Only', [fm, fo])
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            mcc_v = df[mcc].unique()
+            mcc_c = [mcc] + ['MCC' + '__' + m for m in mcc_v if isinstance(m, str)]
+
+        self.assertEqual(len(df.columns), len(mcc_c), f'Col number must match values {len(df.columns), len(mcc_c)}')
+        self.assertListEqual(list(df.columns), mcc_c, f'Names of columns must match values {df.columns}')
+
+    def test_derived_3_levels_idx_exp(self):
         mcc_id = 'MCC_ID'
         mcc_test = 'MCC_ID_1'
         file = FILES_DIR + 'engine_test_base_comma.csv'
@@ -747,6 +806,59 @@ class TestBuildEmbedded(unittest.TestCase):
         self.assertTrue(td1.inference_ready, f'Tensor Definition should have been ready for inference')
         self.assertEqual(td1.rank, 2, f'TensorDefinition should have Rank 2')
         self.assertTrue((df_i[mcc_id] == 1).equals((df_e[mcc_test] == 1)), f'Dataframes not equal')
+
+    # Test OneHot logic at various levels. These will have various iterations that need to do OH logic.
+    def test_derived_3_levels_bin_oh(self):
+        amt = 'Amount'
+        frd = 'Fraud'
+        mcc = 'MCC'
+        mcc_oh = 'MCC_OH'
+        frd_label = 'Fraud'
+        amount_bin = 'amount_bin'
+        bins = 30
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fa = ft.FeatureSource(amt, ft.FEATURE_TYPE_FLOAT_32)
+        fm = ft.FeatureSource(mcc, ft.FEATURE_TYPE_STRING)
+        fl = ft.FeatureSource(frd, ft.FEATURE_TYPE_FLOAT_32)
+        fab = ft.FeatureBin(amount_bin, ft.FEATURE_TYPE_INT_16, fa, bins)
+        flb = ft.FeatureLabelBinary(frd_label, ft.FEATURE_TYPE_INT_8, fl)
+        foh = ft.FeatureOneHot('amount_one_hot', ft.FEATURE_TYPE_INT_8, fab)
+        fmo = ft.FeatureOneHot(mcc_oh, ft.FEATURE_TYPE_INT_16, fm)
+        td1 = ft.TensorDefinition('Input', [fm])
+        td2 = ft.TensorDefinition('Derived', [foh, fmo, flb])
+        with en.EnginePandasNumpy() as e:
+            df_i = e.from_csv(td1, file, inference=False)
+            df_e = e.from_csv(td2, file, inference=False)
+            mcc_v = df_i[mcc].dropna().unique()
+            mcc_c = [f'{mcc}__{c}'for c in mcc_v.tolist()]
+            amt_b = [f'{amount_bin}__{i}' for i in range(bins)]
+        self.assertEqual(len(df_i), len(df_e), f'Weird, lengths not equal {len(df_i)}, {len(df_e)}')
+        self.assertEqual(len(df_e.columns), bins + 1 + len(mcc_v), f'Expected only {bins + 1 + len(mcc_v)} feature')
+        self.assertIn(frd_label, df_e.columns, f'Expected {frd_label} to be in the list of columns')
+        self.assertTrue(set(mcc_c).issubset(set(df_e.columns)), f'Did not find columns {mcc_c}')
+        self.assertTrue(set(amt_b).issubset(set(df_e.columns)), f'Did not find columns {amt_b}')
+
+
+class TestSeriesFrequencies(unittest.TestCase):
+    def test_create_base(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
+        freq = 3
+        fg_1 = ft.FeatureGrouper(
+            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_SUM
+        )
+        fg_2 = ft.FeatureGrouper(
+            'card_2d_avg', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_AVG
+        )
+        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+        with en.EnginePandasNumpy() as e:
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            print('x')
 
 
 def main():

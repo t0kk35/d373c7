@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as nnf
 from .common import Layer, PyTorchLayerException
-from ...features.tensor import TensorDefinition, TensorDefinitionMulti
+from ...features.tensor import TensorDefinition
 from ...features.common import LEARNING_CATEGORY_BINARY, FeatureCategorical
 from ...features import LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL
 from math import sqrt, log
@@ -124,6 +124,7 @@ class TensorDefinitionHead(Layer):
     def __init__(self, tensor_def: TensorDefinition, emb_dropout: float, emb_min_dim: int, emb_max_dim: int):
         TensorDefinitionHead._val_has_bin_or_con_or_cat_features(tensor_def)
         super(TensorDefinitionHead, self).__init__()
+        self._p_tensor_def = tensor_def
         self._rank = tensor_def.rank
         lcs = (LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CONTINUOUS, LEARNING_CATEGORY_CATEGORICAL)
         self._used_learning_categories = {
@@ -148,6 +149,10 @@ class TensorDefinitionHead(Layer):
     @property
     def x_indexes(self) -> List[int]:
         return self._indexes
+
+    @property
+    def tensor_definition(self) -> TensorDefinition:
+        return self._p_tensor_def
 
     def extra_repr(self) -> str:
         return f'lcs={[e.name for e in self._used_learning_categories.keys()]}'
@@ -179,39 +184,39 @@ class TensorDefinitionHead(Layer):
         return self.embedding.embedding_weight(feature)
 
 
-class TensorDefinitionHeadMulti(Layer):
-    def __init__(self, tensor_def: TensorDefinitionMulti, emb_dropout: float, emb_min_dim: int, emb_max_dim: int):
-        super(TensorDefinitionHeadMulti, self).__init__()
-        self.tensor_definition = tensor_def
-        self.heads = nn.ModuleList(
-            [TensorDefinitionHead(td, emb_dropout, emb_min_dim, emb_max_dim) for td in tensor_def.tensor_definitions]
-        )
-        self._output_size = sum([h.output_size for h in self.heads])
-        lcs = [0] + [len(td.learning_categories) for td in tensor_def.tensor_definitions]
-        self._indexes = [[ind + lcs[i] for ind in h.x_indexes] for i, h in enumerate(self.heads)]
-
-    @property
-    def x_indexes(self) -> List[int]:
-        return self._x_indexes
-
-    @property
-    def output_size(self) -> int:
-        return self._output_size
-
-    def forward(self, x) -> List[torch.Tensor]:
-        x = [h([x[ind] for ind in self._indexes[i]]) for i, h in enumerate(self.heads)]
-        return x
-
-    def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
-        x = [ds[i] for ind in self._indexes for i in ind]
-        return x
-
-    def embedding_weight(self, feature: FeatureCategorical) -> torch.Tensor:
-        h = [i for i, td in enumerate(self.tensor_definition.tensor_definitions) if feature in td.features]
-        return self.heads[h[0]].embedding.embedding_weight(feature)
-
-    def extra_repr(self) -> str:
-        return f'Embedded TDs={[td.name for td in self.tensor_definition.tensor_definitions]}'
+# class TensorDefinitionHeadMulti(Layer):
+#     def __init__(self, tensor_def: TensorDefinitionMulti, emb_dropout: float, emb_min_dim: int, emb_max_dim: int):
+#         super(TensorDefinitionHeadMulti, self).__init__()
+#         self.tensor_definition = tensor_def
+#         self.heads = nn.ModuleList(
+#             [TensorDefinitionHead(td, emb_dropout, emb_min_dim, emb_max_dim) for td in tensor_def.tensor_definitions]
+#         )
+#         self._output_size = sum([h.output_size for h in self.heads])
+#         lcs = [0] + [len(td.learning_categories) for td in tensor_def.tensor_definitions]
+#         self._indexes = [[ind + lcs[i] for ind in h.x_indexes] for i, h in enumerate(self.heads)]
+#
+#     @property
+#     def x_indexes(self) -> List[int]:
+#         return self._x_indexes
+#
+#     @property
+#     def output_size(self) -> int:
+#         return self._output_size
+#
+#     def forward(self, x) -> List[torch.Tensor]:
+#         x = [h([x[ind] for ind in self._indexes[i]]) for i, h in enumerate(self.heads)]
+#         return x
+#
+#     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
+#         x = [ds[i] for ind in self._indexes for i in ind]
+#         return x
+#
+#     def embedding_weight(self, feature: FeatureCategorical) -> torch.Tensor:
+#         h = [i for i, td in enumerate(self.tensor_definition.tensor_definitions) if feature in td.features]
+#         return self.heads[h[0]].embedding.embedding_weight(feature)
+#
+#     def extra_repr(self) -> str:
+#         return f'Embedded TDs={[td.name for td in self.tensor_definition.tensor_definitions]}'
 
 
 class AttentionLastEntry(Layer):
@@ -337,14 +342,17 @@ class ConvolutionalBodyBase1d(Layer):
     def __init__(self, in_size: int, series_size: int, conv_layers: [List[Tuple[int, int, int]]],
                  drop_out: float, batch_norm_interval=2, activate_last=True):
         super(ConvolutionalBodyBase1d, self).__init__()
-        self._in_size = in_size
-        self._series_size = series_size
-        self._drop_out = drop_out
+        self._p_in_size = in_size
+        self._p_conv_layers = conv_layers
+        self._p_series_size = series_size
+        self._p_drop_out = drop_out
+        self._p_batch_norm_interval = batch_norm_interval
+        self._p_activate_last = activate_last
         self._output_size = 0
         self._output_series_length = 0
         ly = OrderedDict()
-        prev_size = self._series_size
-        prev_channels = self._in_size
+        prev_size = self._p_in_size
+        prev_channels = self._p_in_size
         for i, (out_channels, kernel, stride) in enumerate(conv_layers):
             ly.update({f'conv_{i+1:02d}': nn.Conv1d(prev_channels, out_channels, kernel, stride)})
             # Don't activate last if requested
@@ -384,6 +392,14 @@ class ConvolutionalBodyBase1d(Layer):
     @output_series_length.setter
     def output_series_length(self, series_length: int):
         self._output_series_length = series_length
+
+    def copy(self) -> Layer:
+        c = ConvolutionalBodyBase1d(
+            self._p_in_size, self._p_series_size, self._p_conv_layers, self._p_drop_out,
+            self._p_batch_norm_interval, self._p_activate_last
+        )
+        c.copy_state_dict(self)
+        return c
 
 
 class ConvolutionalBodyBaseTranspose1d(Layer):
