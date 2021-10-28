@@ -572,7 +572,8 @@ class EnginePandasNumpy(EngineContext):
     def to_series_frequencies(self, target_tensor_def: TensorDefinition, file: str, key_feature: Feature,
                               time_feature: Feature, delimiter: chr = ',', quote: chr = "'",
                               inference: bool = True) -> NumpyList:
-        """Method that will turn a Pandas DataFrame into a frequency series. I works on FeatureGrouper features
+        """
+        Method that will turn a Pandas DataFrame into a frequency series. I works on FeatureGrouper features
         It will 'group' the features (for instance per customer), order according to a date-time field and output
         a set of frequencies
         The output is the same number of records, but each transaction will be pre-pended with the the previous x
