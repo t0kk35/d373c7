@@ -334,7 +334,7 @@ class GeneratedClassifier(_ModelGenerated):
             return
         elif tensor_def.rank == 3:
             # Figure out to which body to use.
-            if self.is_param_defined('recurrent_layers', kwargs):
+            if self.is_param_defined('recurrent_features', kwargs):
                 body_type = 'recurrent'
             elif self.is_param_defined('convolutional_layers', kwargs):
                 body_type = 'convolutional'

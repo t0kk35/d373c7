@@ -104,7 +104,7 @@ class ConvolutionalBody1d(ConvolutionalBodyBase1d):
         super(ConvolutionalBody1d, self).__init__(in_size, series_size, conv_layers, drop_out)
         self._dense = dense
         if self._dense:
-            self.output_size += self._in_size
+            self.output_size += in_size
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Switch series and feature dim, Conv layers want the channel/feature dim as second, the series as third.

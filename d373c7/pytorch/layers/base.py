@@ -351,7 +351,7 @@ class ConvolutionalBodyBase1d(Layer):
         self._output_size = 0
         self._output_series_length = 0
         ly = OrderedDict()
-        prev_size = self._p_in_size
+        prev_size = self._p_series_size
         prev_channels = self._p_in_size
         for i, (out_channels, kernel, stride) in enumerate(conv_layers):
             ly.update({f'conv_{i+1:02d}': nn.Conv1d(prev_channels, out_channels, kernel, stride)})
