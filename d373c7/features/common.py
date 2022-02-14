@@ -14,7 +14,7 @@ def not_implemented(class_):
 
 class FeatureDefinitionException(Exception):
     """
-    Exception thrown when a the Definition of a feature fails
+    Exception thrown when the Definition of a feature fails
     """
     def __init__(self, message: str):
         super().__init__("Error Defining Feature: " + message)
@@ -25,7 +25,7 @@ class FeatureDefinitionException(Exception):
 class LearningCategory:
     """
     Describes the feature category. The category will be used to drive what sort of layers and learning models
-    can used on a specific feature.
+    can be used on a specific feature.
     """
     key: int
     name: str
@@ -65,7 +65,7 @@ LEARNING_CATEGORIES_MODEL_INPUT: List[LearningCategory] = [
 @dataclass(frozen=True)
 class FeatureType:
     """
-    Defines the data type of a particular Feature. It will tell us what sort of data a feature is holding, like
+    Defines the datatype of a particular Feature. It will tell us what sort of data a feature is holding, like
     string values, a float value, an integer value etc... See below for the specific implementations
     """
     key: int
@@ -135,7 +135,7 @@ class Feature(ABC):
 
     def _val_type(self, f_type: Type[FeatureType]) -> None:
         """
-        Validation method to check if the type of a feature of a specific type. Will throw a FeatureDefinitionException
+        Validation method to check if a feature is of a specific type. Will throw a FeatureDefinitionException
         if the feature is NOT of that type.
 
         @return: None
@@ -147,7 +147,7 @@ class Feature(ABC):
 
     def val_int_type(self) -> None:
         """
-        Validation method to check if the type of a feature is integer based. Will throw a FeatureDefinitionException
+        Validation method to check if the feature is integer based. Will throw a FeatureDefinitionException
         if the feature is NOT integer based.
 
         @return: None
@@ -156,7 +156,7 @@ class Feature(ABC):
 
     def val_float_type(self) -> None:
         """
-        Validation method to check if the type of a feature is float based. Will throw a FeatureDefinitionException
+        Validation method to check if the feature is float based. Will throw a FeatureDefinitionException
         if the feature is NOT float based.
 
         @return: None
@@ -165,7 +165,7 @@ class Feature(ABC):
 
     def val_bool_type(self) -> None:
         """
-        Validation method to check if the type of a feature is bool based. Will throw a FeatureDefinitionException
+        Validation method to check if the feature is bool based. Will throw a FeatureDefinitionException
         if the feature is NOT bool based.
 
         @return: None
@@ -188,7 +188,7 @@ class Feature(ABC):
     def inference_ready(self) -> bool:
         """
         Returns a bool indicating if the feature is ready for inference. Some features need to have been trained
-        first or loaded so the know some of the inference attributes they will need to build the feature.
+        first or loaded. They need to know the inference attributes they will need to build the feature.
 
         @return: True if the feature is ready for inference
         """
@@ -255,7 +255,7 @@ class FeatureWithBaseFeature(Feature, ABC):
 
 class FeatureCategorical(Feature, ABC):
     """
-    Place holder for features that are categorical in nature. They implement an additional __len__ method which
+    Placeholder for features that are categorical in nature. They implement an additional __len__ method which
     will be used in embedding layers.
     """
     @abstractmethod
@@ -279,9 +279,9 @@ class FeatureHelper:
         """
         Determine if a certain feature is an instance of a specific FeatureType
 
-        :param feature: (Feature) An instance of 'Feature'
-        :param feature_type (Type) A type of feature to check.
-        :return: A boolean value, True if the input class is an instance of the feature_type
+        @param feature: (Feature) An instance of 'Feature'
+        @param feature_type (Type) A type of feature to check.
+        @return: A boolean value, True if the input class is an instance of the feature_type
         """
         return isinstance(feature.type, feature_type)
 
@@ -290,9 +290,9 @@ class FeatureHelper:
         """
         Determine if a certain feature is an instance of the current class
 
-        :param feature: (Feature) An instance of 'Feature'
-        :param feature_class (Type) A type of feature to check.
-        :return: A boolean value, True if the input class is an instance of the feature class
+        @param feature: (Feature) An instance of 'Feature'
+        @param feature_class (Type) A type of feature to check.
+        @return: A boolean value, True if the input class is an instance of the feature class
         """
         return isinstance(feature, feature_class)
 

@@ -12,7 +12,7 @@ class EngineContextException(Exception):
 
 class EngineContext:
     """ Base class for engine creation. Implemented a context for future use. All engines will be implemented a context
-    in order to be able provide data and create/keep/destroy connections and resources.
+    in order to be able to provide data and create/keep/destroy connections and resources.
     """
     def __init__(self):
         logging.basicConfig(level=logging.INFO,

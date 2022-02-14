@@ -54,7 +54,7 @@ class EnginePandasNumpy(EngineContext):
     tensor definition.
 
     Args:
-        num_threads: The maximum number of thread the engine will use during multi-process processing
+        num_threads: The maximum number of thread the engine will use during multiprocess processing
 
     Attributes:
         one_hot_prefix: The standard pre_fix to create one hot features.
@@ -69,9 +69,9 @@ class EnginePandasNumpy(EngineContext):
     def _val_features_in_data_frame(self, df: pd.DataFrame, tensor_def: TensorDefinition):
         """Validation function to check if all features in a tensor definition are known data frame columns
 
-        :param df: A Panda Dataframe
-        :param tensor_def: A tensor definition
-        :return: None
+        @param df: A Panda Dataframe
+        @param tensor_def: A tensor definition
+        @return: None
         """
         for feature in tensor_def.features:
             if isinstance(feature, FeatureExpander):
@@ -88,8 +88,8 @@ class EnginePandasNumpy(EngineContext):
     def _val_single_date_format_code(format_codes: List[str]):
         """Validation function to check that there is a 01_single format code for dates across a set of format codes.
 
-        :param format_codes: List of format codes from feature definitions. Is a string
-        :return: None
+        @param format_codes: List of format codes from feature definitions. Is a string
+        @return: None
         """
         if len(format_codes) > 1:
             raise EnginePandaNumpyException(f'All date formats should be the same. Got {format_codes}')
@@ -99,9 +99,9 @@ class EnginePandasNumpy(EngineContext):
         """Validation function to check if all feature are ready for inference. Some features have specific inference
         attributes that need to be set before an inference file can be made.
 
-        :param tensor_def: The tensor that needs to be ready for inference.
-        :param inference: Indication if we are inference mode or not.
-        :return: None
+        @param tensor_def: The tensor that needs to be ready for inference.
+        @param inference: Indication if we are inference mode or not.
+        @return: None
         """
         if inference:
             if not tensor_def.inference_ready:
@@ -115,9 +115,9 @@ class EnginePandasNumpy(EngineContext):
 #        """Validation function to check if any of the feature are ready for inference. Some features have specific
 #        inference attributes that would get overwritten if .
 
-#        :param tensor_def: The tensor that needs to be ready for inference.
-#        :param inference: Indication if we are inference mode or not.
-#        :return: None
+#        @param tensor_def: The tensor that needs to be ready for inference.
+#        @param inference: Indication if we are inference mode or not.
+#        @return: None
 #        """
 #        if not inference:
 #            if tensor_def.inference_ready:
@@ -133,9 +133,9 @@ class EnginePandasNumpy(EngineContext):
         are not derived from other features need to be in the Panda. The rest of the features can obviously be
         derived from the root features.
 
-        :param df: The base Panda data to be checked.
-        :param features: List of feature to check.
-        :return: None
+        @param df: The base Panda data to be checked.
+        @param features: List of feature to check.
+        @return: None
         """
         root_features = [f for f in features if len(f.embedded_features) == 0]
         unknown_features = [f for f in root_features if f.name not in df.columns]
@@ -165,15 +165,18 @@ class EnginePandasNumpy(EngineContext):
             )
 
     @staticmethod
-    def _val_time_feature_needed(target_tensor_def: TensorDefinition, df_tensor_def: TensorDefinition,
-                                 time_feature: Feature):
+    def _val_time_feature_needed(target_tensor_def: TensorDefinition, time_feature: Feature):
         if FeatureGrouper in [f.__class__ for f in target_tensor_def.features]:
             if time_feature is None:
                 raise EnginePandaNumpyException(
                     f'There is a FeatureGrouper in the Tensor Definition to create. They need a time field to ' +
                     f' process. Please provide the parameter ''time_feature''.'
                 )
-            EnginePandasNumpy._val_time_feature_available(df_tensor_def, time_feature)
+            else:
+                if not isinstance(time_feature.type, FeatureTypeTimeBased):
+                    raise EnginePandaNumpyException(
+                        f'The time feature used to build a series must be date based. It is of type {time_feature.type}'
+                    )
 
     @staticmethod
     def _val_grouper_based(target_tensor_def: TensorDefinition) -> List[FeatureGrouper]:
@@ -228,7 +231,7 @@ class EnginePandasNumpy(EngineContext):
         read_csv function.
 
         @param date_features: (List[FeaturesSource]) the Features of type date which need to be read
-        @return: (Optional[partial]. A function (the date parser) or none if there were no explicitly defined formats
+        @return: (Optional[partial]). A function (the date parser) or none if there were no explicitly defined formats
         """
         if len(date_features) != 0:
             format_codes = list(set([d.format_code for d in date_features]))
@@ -256,7 +259,7 @@ class EnginePandasNumpy(EngineContext):
         """
         logger.info(f'Building Panda for : <{target_tensor_def.name}> from DataFrame. Inference mode <{inference}>')
         self._val_ready_for_inference(df_tensor_def, inference)
-        self._val_time_feature_needed(target_tensor_def, df_tensor_def, time_feature)
+        self._val_time_feature_needed(target_tensor_def, time_feature)
         self._val_features_defined_as_columns(df, target_tensor_def.embedded_features)
         # Start processing Use the FeatureProcessor class.
         df = _FeatureProcessor.process(
@@ -272,7 +275,7 @@ class EnginePandasNumpy(EngineContext):
         return df
 
     def from_csv(self, target_tensor_def: TensorDefinition, file: str, delimiter: chr = ',', quote: chr = "'",
-                 inference: bool = True) -> pd.DataFrame:
+                 time_feature: Optional[Feature] = None, inference: bool = True) -> pd.DataFrame:
 
         """
         Construct a Panda according to a tensor definition by reading a csv file.
@@ -281,10 +284,14 @@ class EnginePandasNumpy(EngineContext):
         @param file: (str) File to read. This must be a complete file path
         @param delimiter: (chr) The delimiter used in the file. Default is ','
         @param quote: (chr) Quote character. Default is "'"
+        @param time_feature (Feature). Optional. Feature to use for time-based calculations. Some features need to know
+        about the time such as for instance Grouper features. Only needs to be provided if the target_tensor_def
+        contains features that need time.
         @param inference: (bool) Indicate if we are inferring or not. If True [COMPLETE]
         @return: A Panda with the fields as defined in the tensor_def.
         """
         # TODO probably need to check that if not inference, that all feature are ready for inference.
+        self._val_time_feature_needed(target_tensor_def, time_feature)
         # Start by reading the SourceFeatures. Set to correct Panda Type
         file_instance = pathlib.Path(file)
         if not file_instance.exists():
@@ -315,10 +322,10 @@ class EnginePandasNumpy(EngineContext):
 
         built_features = list(set(source_features + date_features))
         td = TensorDefinition(f'Source_Derive_Source', built_features)
-        df = self.from_df(td, df, td, inference)
+        df = self.from_df(td, df, td, inference=inference, time_feature=time_feature)
         all_features = [f for f in all_features if f not in built_features]
         # Repeatedly call from_df, each time building more features as the embedded (dependent) features have been built
-        # Note that the _FeatureProcessor has side-effects. It changes the original df, for performance reasons. In
+        # Note that the _FeatureProcessor has side effects. It changes the original df, for performance reasons. In
         # order to avoid repeated concatenate and stuff.
         i = 1
         while len(all_features) > 0:
@@ -331,13 +338,13 @@ class EnginePandasNumpy(EngineContext):
             ready_to_build = list(set(ready_to_build))
             # Start processing Use the FeatureProcessor class.
             df = _FeatureProcessor.process(
-                df, ready_to_build, inference, self.one_hot_prefix, self.num_threads, None
+                df, ready_to_build, inference, self.one_hot_prefix, self.num_threads, time_feature
             )
             built_features = built_features + ready_to_build
             all_features = [f for f in all_features if f not in built_features]
             i = i+1
 
-        # Reshape df so it matches the target_tensor_def
+        # Reshape df so that it matches the target_tensor_def
         df = self.reshape(target_tensor_def, df)
         # Don't forget to set the Tensor definition rank if in inference mode
         if not inference:
@@ -345,13 +352,13 @@ class EnginePandasNumpy(EngineContext):
         return df
 
     def reshape(self, tensor_def: TensorDefinition, df: pd.DataFrame):
-        """Reshape function. Can be used to reshuffle the columns in a Panda. The columns will be returned in the exact
-        order as the features of the tensor definition. Columns that are not in the tensor definition as feature will
-        be dropped.
+        """Reshape function. Can be used to reshuffle the columns in a Panda. The columns will be returned according to
+        the exact order as the features of the tensor definition. Columns that are not in the tensor definition as
+        feature will be dropped.
 
-        :param df: Input Panda.
-        :param tensor_def: The tensor definition according which to reshape
-        :return: A panda with the columns as defined in tensor_def
+        @param df: Input Panda.
+        @param tensor_def: The tensor definition according which to reshape
+        @return: A panda with the columns as defined in tensor_def
         """
         logger.info(f'Reshaping DataFrame to: {tensor_def.name}')
         self._val_features_in_data_frame(df, tensor_def)
@@ -368,12 +375,12 @@ class EnginePandasNumpy(EngineContext):
         return df
 
     def to_numpy_list(self, tensor_def: TensorDefinition, df: pd.DataFrame) -> NumpyList:
-        """Method to convert a Pandas Dataframe to a object of type NumpyList. A NumpyList is an object which contains
+        """Method to convert a Pandas Dataframe to an object of type NumpyList. A NumpyList is an object which contains
         multiple Numpy arrays. The Numpy array can be turned into Pytorch Tensors.
 
-        :param tensor_def: The TensorDefinition Object used to create the Pandas DataFrame.
-        :param df: The Pandas DataFrame to convert to a NumpyList object.
-        :return: A NumpyList Object containing Numpy arrays for the data in the Pandas DataFrame.
+        @param tensor_def: The TensorDefinition Object used to create the Pandas DataFrame.
+        @param df: The Pandas DataFrame to convert to a NumpyList object.
+        @return: A NumpyList Object containing Numpy arrays for the data in the Pandas DataFrame.
         """
         self._val_features_defined_as_columns(df, tensor_def.features)
 
@@ -396,13 +403,13 @@ class EnginePandasNumpy(EngineContext):
         return npl
 
     def multi_to_numpy_list(self, tensor_def: TensorDefinitionMulti, df: [pd.DataFrame]) -> NumpyList:
-        """Method to convert a Pandas Dataframe to a object of type NumpyList. A NumpyList is an object which contains
+        """Method to convert a Pandas Dataframe to an object of type NumpyList. A NumpyList is an object which contains
         multiple Numpy arrays. The Numpy array can be turned into Pytorch Tensors. Other than the regular to_numpy
         method, this method supports multi-head input, it takes a list of TensorDefinitions and DataFrames.
 
-        :param tensor_def: The TensorDefinitionMulti object used to create the Pandas DataFrame.
-        :param df: The *list* of Pandas DataFrames to convert to a NumpyList object.
-        :return: A NumpyList Object containing Numpy arrays for the data in the Pandas DataFrame.
+        @param tensor_def: The TensorDefinitionMulti object used to create the Pandas DataFrame.
+        @param df: The *list* of Pandas DataFrames to convert to a NumpyList object.
+        @return: A NumpyList Object containing Numpy arrays for the data in the Pandas DataFrame.
         """
         npl = [self.to_numpy_list(td, df) for td, df in zip(tensor_def.tensor_definitions, df)]
         npl = [lst for n in npl for lst in n.lists]
@@ -454,7 +461,7 @@ class EnginePandasNumpy(EngineContext):
         order according to a date-time field and create a sliding time window. The length of this window is a parameter.
         The output is the same number of records as the input file, but each transaction will be pre-pended with the
         previous x (depending on the length) transactions.
-        As input it takes a file and it returns a 3D tensor per learning category.
+        As input, it takes a file, and it returns a 3D tensor per learning category.
 
         @param target_tensor_def: Tensor Definition to use for the series creation. The features that should be stacked.
         @param file: The file name we want to turn into a stacked sequence
@@ -480,9 +487,9 @@ class EnginePandasNumpy(EngineContext):
         f_features.extend([key_feature, time_feature])
         # Create an 'unstacked' dataframe of the features. Do this first so it is ready for inference.
         td = TensorDefinition('InternalKeyTime', list(set(f_features)))
-        df = self.from_csv(td, file, delimiter, quote, inference)
+        df = self.from_csv(td, file, delimiter, quote, inference=inference)
 
-        # Make List of Tuple[LearningCategory, List[Feature], PandaType
+        # Make List of Tuple[LearningCategory, List[Feature]], PandaType
         # Do this once, so we do not need to run this per each customer.
         lc_features = []
         for lc in LEARNING_CATEGORIES_MODEL_INPUT:
@@ -573,12 +580,12 @@ class EnginePandasNumpy(EngineContext):
                               time_feature: Feature, delimiter: chr = ',', quote: chr = "'",
                               inference: bool = True) -> NumpyList:
         """
-        Method that will turn a Pandas DataFrame into a frequency series. I works on FeatureGrouper features
+        Method that will turn a Pandas DataFrame into a frequency series. It works on FeatureGrouper features
         It will 'group' the features (for instance per customer), order according to a date-time field and output
         a set of frequencies
-        The output is the same number of records, but each transaction will be pre-pended with the the previous x
+        The output is the same number of records, but each transaction will be pre-pended with the previous x
         (depending on the length) transactions.
-        As input it takes a 2D Tensor and return a 3D tensor per learning category.
+        As input, it takes a 2D Tensor and return a 3D tensor per learning category.
 
         @param target_tensor_def: (TensorDefinition) Tensor Definition to use for the series creation. The features that
         should be turned into frequencies.
@@ -625,7 +632,7 @@ class EnginePandasNumpy(EngineContext):
         f_features = FeatureHelper.filter_not_feature(FeatureGrouper, f_features)
         f_features.extend([key_feature, time_feature])
         td = TensorDefinition('InternalFrequenciesKeyTime', list(set(f_features)))
-        df = self.from_csv(td, file, delimiter, quote, inference)
+        df = self.from_csv(td, file, delimiter, quote, inference=inference)
 
         for g, td in group_dict.items():
             logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
@@ -655,9 +662,9 @@ class _FeatureProcessor:
     def _val_check_known_func(features: List[Feature], functions: Dict[Type[Feature], Callable]):
         """Validation function to see if we know how to build all the features.
 
-        :param features: All feature that need to be built.
-        :param functions: Dictionary with all known classes and their respective functions
-        :return: None
+        @param features: All feature that need to be built.
+        @param functions: Dictionary with all known classes and their respective functions
+        @return: None
         """
         known_func = [f for s in functions.keys() for f in FeatureHelper.filter_feature(s, features)]
         unknown_func = [f for f in features if f not in known_func]
@@ -730,7 +737,7 @@ class _FeatureProcessor:
         original_df = df[[f.base_feature.name for f in features]]
 
         if not inference:
-            # Use pandas function to get the one-hot features. Set the expand names inference attribute
+            # Use pandas function to get the one-hot features. Set the 'expand names' inference attribute
             columns = [feature.base_feature.name for feature in features]
             df = pd.get_dummies(df, prefix_sep=one_hot_prefix, columns=columns)
             for oh in features:
@@ -803,7 +810,7 @@ class _FeatureProcessor:
                 else:
                     mn = df[feature.base_feature.name].min()
                     bins = np.linspace(mn, mx, feature.number_of_bins)
-                # Set last bin to max possible value. Otherwise unseen values above the biggest bin go to 0.
+                # Set last bin to max possible value. Otherwise, unseen values above the biggest bin go to 0.
                 bins[-1] = np.finfo(bins.dtype).max
                 # Set inference attributes
                 feature.bins = list(bins)
@@ -829,8 +836,82 @@ class _FeatureProcessor:
                                   time_feature: Feature) -> pd.DataFrame:
         if len(features) == 0:
             return df
+        # Group per Group feature. i.e. per key.
+        group_dict = {g: list(gf) for g, gf in groupby(features, lambda x: x.group_feature)}
+        # Group per same time_window, we can treat those in one go.
+        group_dict: Dict[Feature, Dict[int, List[FeatureGrouper]]] = {
+            g: {k: list(v) for k, v in groupby(
+                gf, lambda x: x.time_window
+            )}
+            for g, gf in group_dict.items()
+        }
+        # Now group per time_period and base_feature with a time-window. And turn into Ordered Dict
+        group_dict: Dict[Feature, Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]] = OrderedDict(
+            sorted([
+                (g, OrderedDict(
+                    sorted([
+                        (tw, OrderedDict(
+                            sorted(
+                                [
+                                    (k, list(v)) for k, v in groupby(gf, lambda x: (x.base_feature, x.time_period))
+                                ], key=lambda x:x[0]))
+                         )
+                        for tw, gf in gd.items()
+                    ], key=lambda x: x[0])
+                ))
+                for g, gd in group_dict.items()
+            ], key=lambda x: x[0])
+        )
 
-        # Find the unique groups. There's potentially more than one.
+        for g, td in group_dict:
+            logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
+                        f'using {num_threads} process(es)')
+
+            key_function = partial(
+                _FeatureProcessor._process_grouper_key,
+                time_dict=td,
+                time_feature=time_feature)
+
+            with mp.Pool(num_threads) as p:
+                dfs = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
+            df = pd.concat(dfs, axis=0)
+
+    @staticmethod
+    def _process_grouper_key(rows: pd.DataFrame,
+                             filter_dict: Dict[Feature, Dict[Tuple[Feature, int, TimePeriod], List[FeatureGrouper]]],
+                             time_feature: Feature) -> pd.DataFrame:
+        rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
+        dts = rows[time_feature.name].to_numpy()
+        # Make output structure. A dict of the FeatureGroupers as key and numpy for the values.
+        out = [np.zeros((rows.shape[0], tw, sum([len(it) for it in fts.items()]))) for tw, fts in time_dict.items()]
+
+        for filter_feature, base_dict in filter_dict.items():
+            if filter_feature is not None:
+                filtered = rows[rows[filter_feature.name] == 1]
+            else:
+                filtered = rows
+            # Do filter logic
+            for j in range(len(dts)):
+                # Make sure not to group beyond the current row.
+                df = filtered.iloc[0:j+1]
+                for (base_feature, time_window, time_period), grouper_features in base_dict.items():
+                    # No need to group stuff that is way in the past.
+                    df = df[df[time_feature.name] >= (dts[j] - np.timedelta64(time_window, time_period.numpy_window))]
+                    df = df[[time_feature.name, base_feature.name]].groupby(
+                        pd.Grouper(key=time_feature.name, freq='1' + time_period.pandas_window)
+                    )
+                    for f in grouper_features:
+                        agg_fn = getattr(df, f.aggregator.panda_agg_func)
+                        n = agg_fn().fillna(0).to_numpy()
+        return rows
+
+    @staticmethod
+    def _process_grouper_features_old(df: pd.DataFrame, features: List[FeatureGrouper], num_threads: int,
+                                  time_feature: Feature) -> pd.DataFrame:
+        if len(features) == 0:
+            return df
+
+        # Find the unique groups. There's could be more than one group
         group_dict = {g: list(gf) for g, gf in groupby(features, lambda x: x.group_feature)}
         # Group per same base_feature, filter_feature, time_period and time_window, we can treat those in one go.
         group_dict: Dict[Feature, Dict[Tuple[Feature, Feature, int, TimePeriod], List[FeatureGrouper]]] = {
@@ -860,7 +941,7 @@ class _FeatureProcessor:
         return df
 
     @staticmethod
-    def _process_grouper_key(rows: pd.DataFrame,
+    def _process_grouper_key_old(rows: pd.DataFrame,
                              time_dict: Dict[Tuple[Feature, Feature, int, TimePeriod], List[FeatureGrouper]],
                              time_feature: Feature) -> pd.DataFrame:
         rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
@@ -906,7 +987,7 @@ class _FeatureProcessor:
 
         @return: A Pandas Dataframe containing all the features from the features list parameter
         """
-        functions = {
+        functions: Dict[Type[Feature], Callable] = {
             FeatureSource: partial(
                 cls._process_source_feature,
                 features=FeatureHelper.filter_feature(FeatureSource, features)
@@ -951,3 +1032,36 @@ class _FeatureProcessor:
         for fn in functions.values():
             df = fn(df=df)
         return df
+
+
+class _ProcessorHelper:
+    @staticmethod
+    def make_group_dict(features: List[FeatureGrouper]
+                        ) -> Dict[Feature, Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]]:
+        # Group per Group feature. i.e. per key.
+        group_dict = {g: list(gf) for g, gf in groupby(features, lambda x: x.group_feature)}
+        # Group per same time_window, we can treat those in one go.
+        group_dict: Dict[Feature, Dict[int, List[FeatureGrouper]]] = {
+            g: {k: list(v) for k, v in groupby(
+                gf, lambda x: x.time_window
+            )}
+            for g, gf in group_dict.items()
+        }
+        # Now group per time_period and base_feature with a time-window. And turn into Ordered Dict
+        group_dict: Dict[Feature, Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]] = OrderedDict(
+            sorted([
+                (g, OrderedDict(
+                    sorted([
+                        (tw, OrderedDict(
+                            sorted(
+                                [
+                                    (k, list(v)) for k, v in groupby(gf, lambda x: (x.base_feature, x.time_period))
+                                ], key=lambda x:x[0]))
+                         )
+                        for tw, gf in gd.items()
+                    ], key=lambda x: x[0])
+                ))
+                for g, gd in group_dict.items()
+            ], key=lambda x: x[0])
+        )
+        return group_dict

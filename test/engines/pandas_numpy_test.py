@@ -614,14 +614,17 @@ class TestGrouperFeature(unittest.TestCase):
         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
-        td1 = ft.TensorDefinition('Source', [fd, fr, fa, ff])
+        # td1 = ft.TensorDefinition('Source', [fd, fr, fa, ff])
         fg = ft.FeatureGrouper(
             '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
         td2 = ft.TensorDefinition('Derived', [fd, fr, fa, ff, fg])
         with en.EnginePandasNumpy() as e:
-            df = e.from_csv(td1, file, inference=False)
+            # No time feature is bad
             with self.assertRaises(en.EnginePandaNumpyException):
-                _ = e.from_df(td2, df, td1, inference=False)
+                _ = e.from_csv(td2, file, inference=False)
+            # Time Feature not of datetime type is also bad
+            with self.assertRaises(en.EnginePandaNumpyException):
+                _ = e.from_csv(td2, file, time_feature=fa, inference=False)
 
     def test_grouped_bad_base_not_float(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'

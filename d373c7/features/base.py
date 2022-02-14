@@ -37,7 +37,7 @@ class FeatureSource(Feature):
 @dataclass(unsafe_hash=True)
 class FeatureVirtual(Feature):
     """
-    A place holder feature without actual definition. Sometimes we might want to refer to a feature that is not
+    A placeholder feature without actual definition. Sometimes we might want to refer to a feature that is not
     an actual feature. Fluffy, true, this is a feature without actually being one.
     Virtual features should be created by providing a name and type
     """
@@ -64,7 +64,7 @@ class FeatureIndex(FeatureWithBaseFeature, FeatureCategorical):
     def __post_init__(self):
         self.val_int_type()
         self.val_base_feature_is_string_or_integer()
-        # By default return set embedded features to be the base feature.
+        # By default, return set embedded features to be the base feature.
         self.embedded_features.append(self.base_feature)
         self.embedded_features.extend(self.base_feature.embedded_features)
 
@@ -90,7 +90,7 @@ class FeatureBin(FeatureWithBaseFeature, FeatureCategorical):
     def __post_init__(self):
         self.val_int_type()
         self.val_base_feature_is_float()
-        # By default return set embedded features to be the base feature.
+        # By default; return set embedded features to be the base feature.
         self.embedded_features = self.get_base_and_base_embedded_features()
 
     def __len__(self):
