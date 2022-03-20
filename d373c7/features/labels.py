@@ -38,5 +38,5 @@ class FeatureLabelBinary(FeatureLabel):
         # Do post init validation
         self.val_int_type()
         self.val_base_feature_is_numerical()
-        # By default return set embedded features to be the base feature.
+        # By default, return set embedded features to be the base feature.
         self.embedded_features = self.get_base_and_base_embedded_features()

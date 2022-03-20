@@ -545,7 +545,7 @@ class EnginePandasNumpy(EngineContext):
 
     @staticmethod
     def _process_key_frequencies(rows: pd.DataFrame, time_field: Feature,
-                                 time_dict: Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]
+                                 time_dict: Dict[int, Dict[Tuple[Feature, int], List[FeatureGrouper]]]
                                  ) -> np.array:
 
         # First sort rows on time_field. We want to go up in time as we process.
@@ -609,7 +609,8 @@ class EnginePandasNumpy(EngineContext):
             )}
             for g, gf in group_dict.items()
         }
-        # Now group per time_period and base_feature with a time-window. And turn into Ordered Dict
+        # Now group per time_period and base_feature with a time-window. And turn into Ordered Dict.
+        # The time_period will drive how 'long' the frequency is. Note how we do not group per time_
         group_dict: Dict[Feature, Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]] = OrderedDict(
             sorted([
                 (g, OrderedDict(
@@ -644,7 +645,7 @@ class EnginePandasNumpy(EngineContext):
             )
 
             with mp.Pool(self.num_threads) as p:
-                dfs = p.map(key_function, [rows for _, rows in df.groupby('Card')])
+                dfs = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
 
             df = pd.concat(dfs, axis=0)
             # Restore Original sort
@@ -837,39 +838,46 @@ class _FeatureProcessor:
         if len(features) == 0:
             return df
         # Group per Group feature. i.e. per key.
-        group_dict = {g: list(gf) for g, gf in groupby(features, lambda x: x.group_feature)}
-        # Group per same time_window, we can treat those in one go.
-        group_dict: Dict[Feature, Dict[int, List[FeatureGrouper]]] = {
-            g: {k: list(v) for k, v in groupby(
-                gf, lambda x: x.time_window
-            )}
-            for g, gf in group_dict.items()
-        }
-        # Now group per time_period and base_feature with a time-window. And turn into Ordered Dict
-        group_dict: Dict[Feature, Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]] = OrderedDict(
+        group_dict: Dict[Feature, List[FeatureGrouper]] = OrderedDict(
+            sorted([
+                (g, list(gf)) for g, gf in groupby(features, lambda x: x.group_feature)
+            ], key=lambda x: x[0]))
+
+        # Group per same filter_feature, base feature and time settings. All except the aggregators really.
+        group_dict: Dict[Feature, Dict[Feature, List[FeatureGrouper]]] = OrderedDict(
             sorted([
                 (g, OrderedDict(
                     sorted([
-                        (tw, OrderedDict(
-                            sorted(
-                                [
-                                    (k, list(v)) for k, v in groupby(gf, lambda x: (x.base_feature, x.time_period))
-                                ], key=lambda x:x[0]))
-                         )
-                        for tw, gf in gd.items()
-                    ], key=lambda x: x[0])
-                ))
-                for g, gd in group_dict.items()
+                        (k, list(v)) for k, v in groupby(
+                            gf, lambda x: x.filter_feature)
+                        ], key=lambda x: x[0]))
+                 ) for g, gf in group_dict.items()
             ], key=lambda x: x[0])
         )
 
-        for g, td in group_dict:
+        group_dict: Dict[Feature,
+                         Dict[Feature, Dict[Tuple[Feature, int, TimePeriod], List[FeatureGrouper]]]] = OrderedDict(
+            sorted([
+                (g, OrderedDict(
+                    sorted([
+                        (gk, OrderedDict(
+                            sorted([
+                                (k, list(v)) for k, v in
+                                groupby(fd, lambda x: (x.base_feature, x.time_window, x.time_period))
+                            ], key=lambda x: x[0])
+                        )) for gk, fd in gf.items()
+                    ], key=lambda x: x[0])
+                )) for g, gf in group_dict.items()
+            ], key=lambda x: x[0])
+        )
+
+        for g, td in group_dict.items():
             logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
                         f'using {num_threads} process(es)')
 
             key_function = partial(
                 _FeatureProcessor._process_grouper_key,
-                time_dict=td,
+                filter_dict=td,
                 time_feature=time_feature)
 
             with mp.Pool(num_threads) as p:
@@ -883,94 +891,100 @@ class _FeatureProcessor:
         rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
         dts = rows[time_feature.name].to_numpy()
         # Make output structure. A dict of the FeatureGroupers as key and numpy for the values.
-        out = [np.zeros((rows.shape[0], tw, sum([len(it) for it in fts.items()]))) for tw, fts in time_dict.items()]
+        out = np.zeros((rows.shape[0], sum([len(it) for _, fts in filter_dict.items() for _, it in fts.items()])))
 
-        for filter_feature, base_dict in filter_dict.items():
-            if filter_feature is not None:
-                filtered = rows[rows[filter_feature.name] == 1]
-            else:
-                filtered = rows
-            # Do filter logic
-            for j in range(len(dts)):
-                # Make sure not to group beyond the current row.
-                df = filtered.iloc[0:j+1]
-                for (base_feature, time_window, time_period), grouper_features in base_dict.items():
-                    # No need to group stuff that is way in the past.
-                    df = df[df[time_feature.name] >= (dts[j] - np.timedelta64(time_window, time_period.numpy_window))]
-                    df = df[[time_feature.name, base_feature.name]].groupby(
-                        pd.Grouper(key=time_feature.name, freq='1' + time_period.pandas_window)
+        for j in range(len(dts)):
+            df = rows.iloc[0:j + 1]
+            # Iterate over the various filters we need to apply to the data
+            for fc_f, (filter_feature, fi) in enumerate(filter_dict.items()):
+                # Filter if need be.
+                if filter_feature is not None:
+                    f_df = df[df[filter_feature.name] == 1]
+                else:
+                    f_df = df
+                # Iterate over the feature we need to aggregate and the respective timeperiod.
+                for fc_b, ((base_feature, time_window, time_period), grouper_features) in enumerate(fi.items()):
+                    # Filter out data too far in the past
+                    t_df = f_df[f_df[time_feature.name] >=
+                                (dts[j] - np.timedelta64(time_window, time_period.numpy_window))]
+                    t_df = t_df[[time_feature.name, base_feature.name]].groupby(
+                        pd.Grouper(key=time_feature.name, freq=str(time_window) + time_period.pandas_window)
                     )
-                    for f in grouper_features:
-                        agg_fn = getattr(df, f.aggregator.panda_agg_func)
+                    for fc_e, f in enumerate(grouper_features):
+                        agg_fn = getattr(t_df, f.aggregator.panda_agg_func)
                         n = agg_fn().fillna(0).to_numpy()
+                        out[j, fc_f+fc_b+fc_e] = n[-1]
+                        print('x')
         return rows
 
-    @staticmethod
-    def _process_grouper_features_old(df: pd.DataFrame, features: List[FeatureGrouper], num_threads: int,
-                                  time_feature: Feature) -> pd.DataFrame:
-        if len(features) == 0:
-            return df
+    # Following commented lines are faster. They use rolling. But it does not allow for filtering withing the group.
+    # At some point we could consider using this as faster implementation if no group filters are used.
+    # @staticmethod
+    # def _process_grouper_features(df: pd.DataFrame, features: List[FeatureGrouper], num_threads: int,
+    #                               time_feature: Feature) -> pd.DataFrame:
+    #     if len(features) == 0:
+    #         return df
+    #
+    #     # Find the unique groups. There's could be more than one group
+    #     group_dict = {g: list(gf) for g, gf in groupby(features, lambda x: x.group_feature)}
+    #     # Group per same base_feature, filter_feature, time_period and time_window, we can treat those in one go.
+    #     group_dict: Dict[Feature, Dict[Tuple[Feature, Feature, int, TimePeriod], List[FeatureGrouper]]] = {
+    #         g: {k: list(v) for k, v in groupby(
+    #             gf, lambda x: (x.base_feature, x.filter_feature, x.time_window, x.time_period)
+    #         )}
+    #         for g, gf in group_dict.items()
+    #     }
+    #     # Iterate over the groups
+    #     for g, td in group_dict.items():
+    #         logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
+    #                     f'using {num_threads} process(es)')
+    #
+    #         key_function = partial(
+    #             _FeatureProcessor._process_grouper_key,
+    #             time_dict=td,
+    #             time_feature=time_feature)
+    #
+    #         with mp.Pool(num_threads) as p:
+    #             dfs = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
+    #         df = pd.concat(dfs, axis=0)
+    #
+    #     # Restore original sorting. The original order got messed up in the 'key_function'
+    #     logger.info('Done processing for FeatureGrouper. Start sort')
+    #     df.sort_index(inplace=True)
+    #     logger.info('Done processing for FeatureGrouper. Done sort')
+    #     return df
 
-        # Find the unique groups. There's could be more than one group
-        group_dict = {g: list(gf) for g, gf in groupby(features, lambda x: x.group_feature)}
-        # Group per same base_feature, filter_feature, time_period and time_window, we can treat those in one go.
-        group_dict: Dict[Feature, Dict[Tuple[Feature, Feature, int, TimePeriod], List[FeatureGrouper]]] = {
-            g: {k: list(v) for k, v in groupby(
-                gf, lambda x: (x.base_feature, x.filter_feature, x.time_window, x.time_period)
-            )}
-            for g, gf in group_dict.items()
-        }
-        # Iterate over the groups
-        for g, td in group_dict.items():
-            logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
-                        f'using {num_threads} process(es)')
-
-            key_function = partial(
-                _FeatureProcessor._process_grouper_key,
-                time_dict=td,
-                time_feature=time_feature)
-
-            with mp.Pool(num_threads) as p:
-                dfs = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
-            df = pd.concat(dfs, axis=0)
-
-        # Restore original sorting. The original order got messed up in the 'key_function'
-        logger.info('Done processing for FeatureGrouper. Start sort')
-        df.sort_index(inplace=True)
-        logger.info('Done processing for FeatureGrouper. Done sort')
-        return df
-
-    @staticmethod
-    def _process_grouper_key_old(rows: pd.DataFrame,
-                             time_dict: Dict[Tuple[Feature, Feature, int, TimePeriod], List[FeatureGrouper]],
-                             time_feature: Feature) -> pd.DataFrame:
-        rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
-
-        for (bf, ff, tw, tp), features in time_dict.items():
-            # If a Filter Feature is defined, then filter down the rows to be aggregated.
-            if ff is not None:
-                filtered = rows[rows[ff.name] == 1]
-            else:
-                filtered = rows
-            # So tad complicated; in order for the 'on' field to work the 'on' column must be in the data frame
-            # We can use the same 'Rolling' object for various Aggregators having the same filter and time definition
-            time_window_def = str(tw) + tp.pandas_window
-            r = filtered[
-                [bf.name, time_feature.name]
-            ].rolling(
-                time_window_def, on=time_feature.name, min_periods=1
-            )
-            # Iterate over the aggregators with the same base feature, filter feature and time definition
-            for f in features:
-                t = np.dtype(EnginePandasNumpy.panda_type(f))
-                # Get the correct -variable- aggregator function.
-                # We need to get it from the just created Rolling object 'r'
-                agg_fn = getattr(r, f.aggregator.panda_agg_func)
-                rows[f.name] = agg_fn()[f.base_feature.name].astype(t)
-                # stddev returns nan if there is only one entry and filtered rows also get nan.
-                rows[f.name].fillna(0.0, inplace=True)
-
-        return rows
+    # @staticmethod
+    # def _process_grouper_key(rows: pd.DataFrame,
+    #                          time_dict: Dict[Tuple[Feature, Feature, int, TimePeriod], List[FeatureGrouper]],
+    #                          time_feature: Feature) -> pd.DataFrame:
+    #     rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
+    #
+    #     for (bf, ff, tw, tp), features in time_dict.items():
+    #         # If a Filter Feature is defined, then filter down the rows to be aggregated.
+    #         if ff is not None:
+    #             filtered = rows[rows[ff.name] == 1]
+    #         else:
+    #             filtered = rows
+    #         # So tad complicated; in order for the 'on' field to work the 'on' column must be in the data frame
+    #         # We can use the same 'Rolling' object for various Aggregators having the same filter and time definition
+    #         time_window_def = str(tw) + tp.pandas_window
+    #         r = filtered[
+    #             [bf.name, time_feature.name]
+    #         ].rolling(
+    #             time_window_def, on=time_feature.name, min_periods=1
+    #         )
+    #         # Iterate over the aggregators with the same base feature, filter feature and time definition
+    #         for f in features:
+    #             t = np.dtype(EnginePandasNumpy.panda_type(f))
+    #             # Get the correct -variable- aggregator function.
+    #             # We need to get it from the just created Rolling object 'r'
+    #             agg_fn = getattr(r, f.aggregator.panda_agg_func)
+    #             rows[f.name] = agg_fn()[f.base_feature.name].astype(t)
+    #             # stddev returns nan if there is only one entry and filtered rows also get nan.
+    #             rows[f.name].fillna(0.0, inplace=True)
+    #
+    #     return rows
 
     @classmethod
     def process(cls, df: pd.DataFrame, features: List[Feature], inference: bool, one_hot_prefix: str,
@@ -1033,35 +1047,3 @@ class _FeatureProcessor:
             df = fn(df=df)
         return df
 
-
-class _ProcessorHelper:
-    @staticmethod
-    def make_group_dict(features: List[FeatureGrouper]
-                        ) -> Dict[Feature, Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]]:
-        # Group per Group feature. i.e. per key.
-        group_dict = {g: list(gf) for g, gf in groupby(features, lambda x: x.group_feature)}
-        # Group per same time_window, we can treat those in one go.
-        group_dict: Dict[Feature, Dict[int, List[FeatureGrouper]]] = {
-            g: {k: list(v) for k, v in groupby(
-                gf, lambda x: x.time_window
-            )}
-            for g, gf in group_dict.items()
-        }
-        # Now group per time_period and base_feature with a time-window. And turn into Ordered Dict
-        group_dict: Dict[Feature, Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]] = OrderedDict(
-            sorted([
-                (g, OrderedDict(
-                    sorted([
-                        (tw, OrderedDict(
-                            sorted(
-                                [
-                                    (k, list(v)) for k, v in groupby(gf, lambda x: (x.base_feature, x.time_period))
-                                ], key=lambda x:x[0]))
-                         )
-                        for tw, gf in gd.items()
-                    ], key=lambda x: x[0])
-                ))
-                for g, gd in group_dict.items()
-            ], key=lambda x: x[0])
-        )
-        return group_dict

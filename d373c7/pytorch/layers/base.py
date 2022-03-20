@@ -15,36 +15,36 @@ from typing import List, Tuple, Union
 
 
 # TODO Remove
-class LinDropAct(Layer):
-    """Layer that runs a sequence of Linear/Drop-out/Activation operations. The definition will determine how many
-    layers there are.
-    For instance definition = [(128,0.0),(64,0.0),(32.0.1) will create 3 Linear Layers of 128, 64 and 32 features
-    respectively. A dropout of 0.1 will be applied to the last layer.
-
-    :argument input_size: The size of the first layer. This must be the same as the output size of the previous layer
-    :argument definition: A List of Tuples. Each entry in the list will be turned into a layer. The Tuples must be
-    of type [int, float]. The int is the number of features in that specific layer, the float is the dropout rate at
-    that layer. If the dropout is 0.0 no dropout will be performed.
-    """
-    def __init__(self, input_size: int, definition: List[Tuple[int, float]]):
-        super(LinDropAct, self).__init__()
-        ls = []
-        prev_size = input_size
-        for o_size, dropout in definition:
-            ls.append(nn.Linear(prev_size, o_size))
-            if dropout != 0:
-                ls.append(nn.Dropout(dropout))
-            ls.append(nn.ReLU())
-            prev_size = o_size
-        self._out_size = prev_size
-        self.layers = nn.Sequential(*ls)
-
-    @property
-    def output_size(self) -> int:
-        return self._out_size
-
-    def forward(self, x: torch.Tensor):
-        return self.layers(x)
+# class LinDropAct(Layer):
+#     """Layer that runs a sequence of Linear/Drop-out/Activation operations. The definition will determine how many
+#     layers there are.
+#     For instance definition = [(128,0.0),(64,0.0),(32.0.1) will create 3 Linear Layers of 128, 64 and 32 features
+#     respectively. A dropout of 0.1 will be applied to the last layer.
+#
+#     :argument input_size: The size of the first layer. This must be the same as the output size of the previous layer
+#     :argument definition: A List of Tuples. Each entry in the list will be turned into a layer. The Tuples must be
+#     of type [int, float]. The int is the number of features in that specific layer, the float is the dropout rate at
+#     that layer. If the dropout is 0.0 no dropout will be performed.
+#     """
+#     def __init__(self, input_size: int, definition: List[Tuple[int, float]]):
+#         super(LinDropAct, self).__init__()
+#         ls = []
+#         prev_size = input_size
+#         for o_size, dropout in definition:
+#             ls.append(nn.Linear(prev_size, o_size))
+#             if dropout != 0:
+#                 ls.append(nn.Dropout(dropout))
+#             ls.append(nn.ReLU())
+#             prev_size = o_size
+#         self._out_size = prev_size
+#         self.layers = nn.Sequential(*ls)
+#
+#     @property
+#     def output_size(self) -> int:
+#         return self._out_size
+#
+#     def forward(self, x: torch.Tensor):
+#         return self.layers(x)
 
 
 class Embedding(Layer):

@@ -3,7 +3,6 @@ Unit Tests for PandasNumpy Engine
 (c) 2020 d373c7
 """
 import unittest
-import datetime as dt
 import numpy as np
 from datetime import timedelta
 from statistics import stdev
@@ -750,8 +749,7 @@ class TestGrouperFeature(unittest.TestCase):
         )
         td2 = ft.TensorDefinition('Derived', [fd, fr, fc, fa, f_not_one, f_is_one, fg_not_one, fg_is_one, fg_no_filter])
         with en.EnginePandasNumpy() as e:
-            df = e.from_csv(td1, file, inference=False)
-            df = e.from_df(td2, df, td1, inference=False, time_feature=fd)
+            df = e.from_csv(td2, file, inference=False, time_feature=fd)
         # We are using a 1 day window so the filtered records on (fraud == 1) added to (fraud == 2)
         # should be the same a no filter
         self.assertTrue((df['card_no_filter'].equals(df['card_not_one'] + df['card_one'])))

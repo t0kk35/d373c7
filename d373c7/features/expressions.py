@@ -96,7 +96,7 @@ class FeatureExpression(_ExpressionBased):
 
 
 @enforce_types
-@dataclass(unsafe_hash=True)
+@dataclass(unsafe_hash=True, order=True)
 class FeatureFilter(FeatureExpression):
     """
     Is a specialisation of the FeatureExpression. It can only output a true or false, so must have a boolean type
@@ -114,6 +114,7 @@ class FeatureFilter(FeatureExpression):
             self.embedded_features.extend(pf.embedded_features)
         self.embedded_features = list(set(self.embedded_features))
 
+#TODO class FeatureFilterGroup
 
 @enforce_types
 @dataclass(unsafe_hash=True)
@@ -128,3 +129,4 @@ class FeatureExpressionSeries(_ExpressionBased):
         for pf in self.param_features:
             self.embedded_features.extend(pf.embedded_features)
         self.embedded_features = list(set(self.embedded_features))
+

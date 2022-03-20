@@ -4,7 +4,7 @@ Definition of grouped features.
 """
 import logging
 from datetime import timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .common import LearningCategory
 from ..common import enforce_types
@@ -60,7 +60,7 @@ AGGREGATOR_STDDEV = Aggregator(5, 'Standard Deviation', 'std')
 @dataclass(unsafe_hash=True)
 class FeatureGrouper(FeatureWithBaseFeature):
     group_feature: Feature
-    filter_feature: Optional[FeatureFilter]
+    filter_feature: Optional[FeatureFilter] = field(compare=False)
     time_period: TimePeriod
     time_window: int
     aggregator: Aggregator
