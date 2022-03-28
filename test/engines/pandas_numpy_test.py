@@ -21,11 +21,11 @@ def fn_double(x: float) -> float:
 
 
 def fn_not_one(x: float) -> bool:
-    return x != 1
+    return x != 1.0
 
 
 def fn_one(x: float) -> bool:
-    return x == 1
+    return x == 1.0
 
 
 class TestReading(unittest.TestCase):
@@ -613,7 +613,6 @@ class TestGrouperFeature(unittest.TestCase):
         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
-        # td1 = ft.TensorDefinition('Source', [fd, fr, fa, ff])
         fg = ft.FeatureGrouper(
             '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
         td2 = ft.TensorDefinition('Derived', [fd, fr, fa, ff, fg])
@@ -647,7 +646,6 @@ class TestGrouperFeature(unittest.TestCase):
         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
-        td1 = ft.TensorDefinition('Source', [fd, fr, fa, ff])
         time_window = 2
 
         feature_def = [
@@ -666,10 +664,9 @@ class TestGrouperFeature(unittest.TestCase):
             fd, fr, fa, ff
         ]
         features.extend(group_features)
-        td2 = ft.TensorDefinition('Derived', features)
+        td = ft.TensorDefinition('Features', features)
         with en.EnginePandasNumpy() as e:
-            df = e.from_csv(td1, file, inference=False)
-            df = e.from_df(td2, df, td1, inference=False, time_feature=fd)
+            df = e.from_csv(td, file, inference=False, time_feature=fd)
 
         # Check that all GrouperFeature have been created.
         for grouper_name, _, _ in feature_def:
@@ -737,7 +734,6 @@ class TestGrouperFeature(unittest.TestCase):
         fl = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         f_not_one = ft.FeatureFilter('Not_Fraud', ft.FEATURE_TYPE_BOOL, fn_not_one, [fl])
         f_is_one = ft.FeatureFilter('Is_Fraud', ft.FEATURE_TYPE_BOOL, fn_one, [fl])
-        td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, fl])
         fg_not_one = ft.FeatureGrouper(
             'card_not_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, f_not_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
         )
@@ -747,11 +743,14 @@ class TestGrouperFeature(unittest.TestCase):
         fg_no_filter = ft.FeatureGrouper(
             'card_no_filter', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
         )
-        td2 = ft.TensorDefinition('Derived', [fd, fr, fc, fa, f_not_one, f_is_one, fg_not_one, fg_is_one, fg_no_filter])
+        td = ft.TensorDefinition('Derived', [fd, fr, fc, fa, f_not_one, f_is_one, fg_not_one, fg_is_one, fg_no_filter])
         with en.EnginePandasNumpy() as e:
-            df = e.from_csv(td2, file, inference=False, time_feature=fd)
+            df = e.from_csv(td, file, inference=False, time_feature=fd)
         # We are using a 1 day window so the filtered records on (fraud == 1) added to (fraud == 2)
         # should be the same a no filter
+        with pd.option_context('display.max_rows', None, 'display.max_columns',
+                               None):  # more options can be specified also
+            print(df)
         self.assertTrue((df['card_no_filter'].equals(df['card_not_one'] + df['card_one'])))
 
 
@@ -840,26 +839,26 @@ class TestBuildEmbedded(unittest.TestCase):
         self.assertTrue(set(amt_b).issubset(set(df_e.columns)), f'Did not find columns {amt_b}')
 
 
-class TestSeriesFrequencies(unittest.TestCase):
-    def test_create_base(self):
-        file = FILES_DIR + 'engine_test_base_comma.csv'
-        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
-        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
-        fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
-        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
-        ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
-        td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
-        freq = 3
-        fg_1 = ft.FeatureGrouper(
-            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_SUM
-        )
-        fg_2 = ft.FeatureGrouper(
-            'card_2d_avg', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_AVG
-        )
-        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
-        with en.EnginePandasNumpy() as e:
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
-            print('x')
+# class TestSeriesFrequencies(unittest.TestCase):
+#     def test_create_base(self):
+#         file = FILES_DIR + 'engine_test_base_comma.csv'
+#         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+#         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+#         fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
+#         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+#         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
+#         td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
+#         freq = 3
+#         fg_1 = ft.FeatureGrouper(
+#             'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_SUM
+#         )
+#         fg_2 = ft.FeatureGrouper(
+#             'card_2d_avg', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_AVG
+#         )
+#         td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+#         with en.EnginePandasNumpy() as e:
+#             n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+#             print('x')
 
 
 def main():

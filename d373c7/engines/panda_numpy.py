@@ -14,6 +14,7 @@ from itertools import groupby
 from collections import OrderedDict
 from typing import Dict, List, Callable, Type, Tuple, Optional, Union
 from .common import EngineContext
+from .profile import ProfileNative
 from .numpy_helper import NumpyList
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL
 from ..features.common import FeatureTypeInteger, FeatureHelper
@@ -263,7 +264,8 @@ class EnginePandasNumpy(EngineContext):
         self._val_features_defined_as_columns(df, target_tensor_def.embedded_features)
         # Start processing Use the FeatureProcessor class.
         df = _FeatureProcessor.process(
-            df, target_tensor_def.features, inference, self.one_hot_prefix, self.num_threads, time_feature
+            df, df_tensor_def, target_tensor_def.features, inference, self.one_hot_prefix, self.num_threads,
+            time_feature
         )
         # Only return base features in the target_tensor_definition. No need to return the embedded features.
         # Remember that expander features can contain multiple columns.
@@ -297,8 +299,8 @@ class EnginePandasNumpy(EngineContext):
         if not file_instance.exists():
             raise EnginePandaNumpyException(f' path {file} does not exist or is not a file')
         logger.info(f'Building Panda for : {target_tensor_def.name} from file {file}')
-        all_features = target_tensor_def.embedded_features
-        source_features = FeatureHelper.filter_feature(FeatureSource, all_features)
+        need_to_build = target_tensor_def.embedded_features
+        source_features = FeatureHelper.filter_feature(FeatureSource, need_to_build)
         source_feature_names = [field.name for field in source_features]
         source_feature_types = {
             feature.name: EnginePandasNumpy.panda_type(feature, read=True) for feature in source_features
@@ -321,27 +323,28 @@ class EnginePandasNumpy(EngineContext):
         )
 
         built_features = list(set(source_features + date_features))
-        td = TensorDefinition(f'Source_Derive_Source', built_features)
+        td = TensorDefinition(f'Built Features', built_features)
         df = self.from_df(td, df, td, inference=inference, time_feature=time_feature)
-        all_features = [f for f in all_features if f not in built_features]
+        need_to_build = [f for f in need_to_build if f not in built_features]
         # Repeatedly call from_df, each time building more features as the embedded (dependent) features have been built
         # Note that the _FeatureProcessor has side effects. It changes the original df, for performance reasons. In
         # order to avoid repeated concatenate and stuff.
         i = 1
-        while len(all_features) > 0:
+        while len(need_to_build) > 0:
             if i > 20:
                 raise EnginePandaNumpyException(
                     f'Exiting. Did more that {i} iterations trying to build {target_tensor_def.name}.' +
                     f'Potential endless loop.'
                 )
-            ready_to_build = [f for f in all_features if all(ef in built_features for ef in f.embedded_features)]
+            ready_to_build = [f for f in need_to_build if all(ef in built_features for ef in f.embedded_features)]
             ready_to_build = list(set(ready_to_build))
             # Start processing Use the FeatureProcessor class.
             df = _FeatureProcessor.process(
-                df, ready_to_build, inference, self.one_hot_prefix, self.num_threads, time_feature
+                df, td, ready_to_build, inference, self.one_hot_prefix, self.num_threads, time_feature
             )
             built_features = built_features + ready_to_build
-            all_features = [f for f in all_features if f not in built_features]
+            td = TensorDefinition(f'Built Features', built_features)
+            need_to_build = [f for f in need_to_build if f not in built_features]
             i = i+1
 
         # Reshape df so that it matches the target_tensor_def
@@ -833,8 +836,8 @@ class _FeatureProcessor:
         return df
 
     @staticmethod
-    def _process_grouper_features(df: pd.DataFrame, features: List[FeatureGrouper], num_threads: int,
-                                  time_feature: Feature) -> pd.DataFrame:
+    def _process_grouper_features(df: pd.DataFrame, df_td: TensorDefinition, features: List[FeatureGrouper],
+                                  num_threads: int, time_feature: Feature) -> pd.DataFrame:
         if len(features) == 0:
             return df
         # Group per Group feature. i.e. per key.
@@ -843,156 +846,47 @@ class _FeatureProcessor:
                 (g, list(gf)) for g, gf in groupby(features, lambda x: x.group_feature)
             ], key=lambda x: x[0]))
 
-        # Group per same filter_feature, base feature and time settings. All except the aggregators really.
-        group_dict: Dict[Feature, Dict[Feature, List[FeatureGrouper]]] = OrderedDict(
-            sorted([
-                (g, OrderedDict(
-                    sorted([
-                        (k, list(v)) for k, v in groupby(
-                            gf, lambda x: x.filter_feature)
-                        ], key=lambda x: x[0]))
-                 ) for g, gf in group_dict.items()
-            ], key=lambda x: x[0])
-        )
-
-        group_dict: Dict[Feature,
-                         Dict[Feature, Dict[Tuple[Feature, int, TimePeriod], List[FeatureGrouper]]]] = OrderedDict(
-            sorted([
-                (g, OrderedDict(
-                    sorted([
-                        (gk, OrderedDict(
-                            sorted([
-                                (k, list(v)) for k, v in
-                                groupby(fd, lambda x: (x.base_feature, x.time_window, x.time_period))
-                            ], key=lambda x: x[0])
-                        )) for gk, fd in gf.items()
-                    ], key=lambda x: x[0])
-                )) for g, gf in group_dict.items()
-            ], key=lambda x: x[0])
-        )
-
-        for g, td in group_dict.items():
+        for g, gf in group_dict.items():
             logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
                         f'using {num_threads} process(es)')
 
             key_function = partial(
                 _FeatureProcessor._process_grouper_key,
-                filter_dict=td,
+                group_features=gf,
+                df_td=df_td,
                 time_feature=time_feature)
 
             with mp.Pool(num_threads) as p:
                 dfs = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
             df = pd.concat(dfs, axis=0)
 
+        # Restore Original Sort
+        df.sort_index(inplace=True)
+        return df
+
     @staticmethod
     def _process_grouper_key(rows: pd.DataFrame,
-                             filter_dict: Dict[Feature, Dict[Tuple[Feature, int, TimePeriod], List[FeatureGrouper]]],
+                             group_features: List[FeatureGrouper],
+                             df_td: TensorDefinition,
                              time_feature: Feature) -> pd.DataFrame:
         rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
-        dts = rows[time_feature.name].to_numpy()
-        # Make output structure. A dict of the FeatureGroupers as key and numpy for the values.
-        out = np.zeros((rows.shape[0], sum([len(it) for _, fts in filter_dict.items() for _, it in fts.items()])))
-
-        for j in range(len(dts)):
-            df = rows.iloc[0:j + 1]
-            # Iterate over the various filters we need to apply to the data
-            for fc_f, (filter_feature, fi) in enumerate(filter_dict.items()):
-                # Filter if need be.
-                if filter_feature is not None:
-                    f_df = df[df[filter_feature.name] == 1]
-                else:
-                    f_df = df
-                # Iterate over the feature we need to aggregate and the respective timeperiod.
-                for fc_b, ((base_feature, time_window, time_period), grouper_features) in enumerate(fi.items()):
-                    # Filter out data too far in the past
-                    t_df = f_df[f_df[time_feature.name] >=
-                                (dts[j] - np.timedelta64(time_window, time_period.numpy_window))]
-                    t_df = t_df[[time_feature.name, base_feature.name]].groupby(
-                        pd.Grouper(key=time_feature.name, freq=str(time_window) + time_period.pandas_window)
-                    )
-                    for fc_e, f in enumerate(grouper_features):
-                        agg_fn = getattr(t_df, f.aggregator.panda_agg_func)
-                        n = agg_fn().fillna(0).to_numpy()
-                        out[j, fc_f+fc_b+fc_e] = n[-1]
-                        print('x')
-        return rows
-
-    # Following commented lines are faster. They use rolling. But it does not allow for filtering withing the group.
-    # At some point we could consider using this as faster implementation if no group filters are used.
-    # @staticmethod
-    # def _process_grouper_features(df: pd.DataFrame, features: List[FeatureGrouper], num_threads: int,
-    #                               time_feature: Feature) -> pd.DataFrame:
-    #     if len(features) == 0:
-    #         return df
-    #
-    #     # Find the unique groups. There's could be more than one group
-    #     group_dict = {g: list(gf) for g, gf in groupby(features, lambda x: x.group_feature)}
-    #     # Group per same base_feature, filter_feature, time_period and time_window, we can treat those in one go.
-    #     group_dict: Dict[Feature, Dict[Tuple[Feature, Feature, int, TimePeriod], List[FeatureGrouper]]] = {
-    #         g: {k: list(v) for k, v in groupby(
-    #             gf, lambda x: (x.base_feature, x.filter_feature, x.time_window, x.time_period)
-    #         )}
-    #         for g, gf in group_dict.items()
-    #     }
-    #     # Iterate over the groups
-    #     for g, td in group_dict.items():
-    #         logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
-    #                     f'using {num_threads} process(es)')
-    #
-    #         key_function = partial(
-    #             _FeatureProcessor._process_grouper_key,
-    #             time_dict=td,
-    #             time_feature=time_feature)
-    #
-    #         with mp.Pool(num_threads) as p:
-    #             dfs = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
-    #         df = pd.concat(dfs, axis=0)
-    #
-    #     # Restore original sorting. The original order got messed up in the 'key_function'
-    #     logger.info('Done processing for FeatureGrouper. Start sort')
-    #     df.sort_index(inplace=True)
-    #     logger.info('Done processing for FeatureGrouper. Done sort')
-    #     return df
-
-    # @staticmethod
-    # def _process_grouper_key(rows: pd.DataFrame,
-    #                          time_dict: Dict[Tuple[Feature, Feature, int, TimePeriod], List[FeatureGrouper]],
-    #                          time_feature: Feature) -> pd.DataFrame:
-    #     rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
-    #
-    #     for (bf, ff, tw, tp), features in time_dict.items():
-    #         # If a Filter Feature is defined, then filter down the rows to be aggregated.
-    #         if ff is not None:
-    #             filtered = rows[rows[ff.name] == 1]
-    #         else:
-    #             filtered = rows
-    #         # So tad complicated; in order for the 'on' field to work the 'on' column must be in the data frame
-    #         # We can use the same 'Rolling' object for various Aggregators having the same filter and time definition
-    #         time_window_def = str(tw) + tp.pandas_window
-    #         r = filtered[
-    #             [bf.name, time_feature.name]
-    #         ].rolling(
-    #             time_window_def, on=time_feature.name, min_periods=1
-    #         )
-    #         # Iterate over the aggregators with the same base feature, filter feature and time definition
-    #         for f in features:
-    #             t = np.dtype(EnginePandasNumpy.panda_type(f))
-    #             # Get the correct -variable- aggregator function.
-    #             # We need to get it from the just created Rolling object 'r'
-    #             agg_fn = getattr(r, f.aggregator.panda_agg_func)
-    #             rows[f.name] = agg_fn()[f.base_feature.name].astype(t)
-    #             # stddev returns nan if there is only one entry and filtered rows also get nan.
-    #             rows[f.name].fillna(0.0, inplace=True)
-    #
-    #     return rows
+        dts = rows.to_numpy()
+        out = np.zeros((len(dts), len(group_features)))
+        p = ProfileNative(group_features, time_feature, df_td)
+        for i in range(len(dts)):
+            p.contribute(dts[i])
+            out[i, :] = p.list()
+        ags = pd.DataFrame(out, index=rows.index, columns=[f.name for f in group_features])
+        return pd.concat([rows, ags], axis=1)
 
     @classmethod
-    def process(cls, df: pd.DataFrame, features: List[Feature], inference: bool, one_hot_prefix: str,
-                num_threads: int, time_feature: Optional[Feature]) -> pd.DataFrame:
+    def process(cls, df: pd.DataFrame, df_td: TensorDefinition, features: List[Feature], inference: bool,
+                one_hot_prefix: str, num_threads: int, time_feature: Optional[Feature]) -> pd.DataFrame:
         """class method which will create a DataFrame of derived features. It will apply logic depending on the type of
         feature.
 
         @param df: Pandas Dataframe containing the base features. The raw features as found in for instance a file
+        @param df_td: The tensor definition used to build the df. It knows which fields are in the df.
         @param features: List of Features to create.
         @param inference: Boolean value indicating if we are running in inference or not.
         @param one_hot_prefix: String, the prefix to be used for one-hot-encoded features
@@ -1038,6 +932,7 @@ class _FeatureProcessor:
             FeatureGrouper: partial(
                 cls._process_grouper_features,
                 features=FeatureHelper.filter_feature(FeatureGrouper, features),
+                df_td=df_td,
                 num_threads=num_threads,
                 time_feature=time_feature
             )

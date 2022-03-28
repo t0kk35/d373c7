@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 @enforce_types
-@dataclass(unsafe_hash=True)
+@dataclass(unsafe_hash=True, order=True)
 class FeatureSource(Feature):
     """
     A feature found in a source. I.e a file or message or JSON or other. This is the most basic feature.

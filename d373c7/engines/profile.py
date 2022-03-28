@@ -5,13 +5,16 @@ Profile Base definitions
 import logging
 
 import numpy as np
+import datetime as dt
 
 from abc import ABC, abstractmethod
 from ..features.group import FeatureGrouper, Aggregator, TimePeriod
-from ..features.common import FeatureHelper, Feature
+from ..features.common import Feature
 from ..features.tensor import TensorDefinition
+from ..features.common import FeatureHelper, FeatureTypeTimeBased
+from collections import deque
 from math import sqrt
-from typing import List, Tuple, TypeVar, Generic, Optional, Dict
+from typing import List, Tuple, TypeVar, Generic, Dict
 from itertools import groupby
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,10 @@ class ProfileElement(Generic[AO], ABC):
     def contribute(self, contribution: AO):
         pass
 
+    @abstractmethod
+    def merge(self, pe: 'ProfileElement[AO]'):
+        pass
+
 
 class ProfileField(Generic[IN, OUT], ABC):
     @abstractmethod
@@ -39,20 +46,13 @@ class ProfileField(Generic[IN, OUT], ABC):
         pass
 
     @abstractmethod
-    def list(self) -> OUT:
+    def run_time_logic(self, current_time: dt.datetime):
         pass
 
 
 class ProfileAggregator(Generic[AO], ABC):
     @abstractmethod
     def aggregate(self, field: ProfileElement[AO]) -> AO:
-        pass
-
-
-class ProfileFieldFactory(Generic[IN, OUT], ABC):
-    @abstractmethod
-    def get_profile_fields(self, features: List[FeatureGrouper], contrib_tensor_definition: TensorDefinition) \
-            -> List[ProfileField[IN, OUT]]:
         pass
 
 
@@ -63,11 +63,12 @@ class ProfileAggregatorFactory(Generic[AO], ABC):
 
 
 class Profile(Generic[IN, AI, AO, OUT], ABC):
-    def __init__(self, features: List[FeatureGrouper], contrib_tensor_definition: TensorDefinition):
+    def __init__(self, features: List[FeatureGrouper]):
         self.features = features
 
     def contribute(self, contribution: IN):
         for pf in self.profile_fields:
+            pf.run_time_logic(self.extract_date_time(contribution))
             pf.contribute(contribution)
 
     @property
@@ -76,37 +77,12 @@ class Profile(Generic[IN, AI, AO, OUT], ABC):
         pass
 
     @abstractmethod
-    def list(self) -> OUT:
+    def extract_date_time(self, contribution: IN) -> dt.datetime:
         pass
 
     @abstractmethod
-    def get_profile_field_factory(self) -> ProfileFieldFactory[IN, OUT]:
+    def list(self) -> OUT:
         pass
-
-
-class ProfileAggregatorFactoryNative(ProfileAggregatorFactory[float]):
-    def get_aggregator(self, aggregator: Aggregator) -> ProfileAggregator[float]:
-        if aggregator.name == 'Count':
-            return ProfileAggregatorNativeCount()
-        elif aggregator.name == 'Sum':
-            return ProfileAggregatorNativeSum()
-        elif aggregator.name == 'Mean':
-            return ProfileAggregatorNativeMean()
-        elif aggregator.name == 'Stddev':
-            return ProfileAggregatorNativeStddev()
-        elif aggregator.name == 'Min':
-            return ProfileAggregatorNativeMin()
-        elif aggregator.name == 'Max':
-            return ProfileAggregatorNativeMax()
-        else:
-            raise ProfileException(f'Unknown Profile aggregator {aggregator.name}')
-
-
-class ProfileFieldNative(ProfileField[np.ndarray, List[float]]):
-    def __init__(self, base_feature: Feature, filter_feature: Feature, contrib_tensor_definition: TensorDefinition):
-        self.element = ProfileElementNative()
-        self.base_feature_index = self.feature_index(base_feature, contrib_tensor_definition)
-        self.filter_feature_index = self.feature_index(filter_feature, contrib_tensor_definition)
 
     @staticmethod
     def feature_index(feature: Feature, contrib_tensor_definition: TensorDefinition) -> int:
@@ -121,66 +97,108 @@ class ProfileFieldNative(ProfileField[np.ndarray, List[float]]):
             )
         return index
 
+
+class ProfileAggregatorFactoryNative(ProfileAggregatorFactory[float]):
+    def get_aggregator(self, aggregator: Aggregator) -> ProfileAggregator[float]:
+        if aggregator.name == 'Count':
+            return ProfileAggregatorNativeCount()
+        elif aggregator.name == 'Sum':
+            return ProfileAggregatorNativeSum()
+        elif aggregator.name == 'Average':
+            return ProfileAggregatorNativeAverage()
+        elif aggregator.name == 'Standard Deviation':
+            return ProfileAggregatorNativeStddev()
+        elif aggregator.name == 'Minimum':
+            return ProfileAggregatorNativeMin()
+        elif aggregator.name == 'Maximum':
+            return ProfileAggregatorNativeMax()
+        else:
+            raise ProfileException(f'Unknown Profile aggregator {aggregator.name}')
+
+
+class ProfileFieldNative(ProfileField[np.ndarray, np.ndarray]):
+    def __init__(self, base_feature: Feature, filter_feature: Feature, time_period: TimePeriod,
+                 time_window: int, contrib_tensor_definition: TensorDefinition):
+        self._base_feature_index = Profile.feature_index(base_feature, contrib_tensor_definition)
+        self._filter_feature_index = Profile.feature_index(filter_feature, contrib_tensor_definition)
+        self._time_slots = deque([ProfileElementNative() for _ in range(time_window)], maxlen=time_window)
+        self._time_period = time_period
+        self._time_window = time_window
+        self._start_period_time = None
+
     def contribute(self, contribution: np.ndarray):
         # Only contribute if filter is True or None
-        if self.filter_feature_index == -1 or contribution[self.filter_feature_index] is True:
-            self.element.contribute(contribution[self.base_feature_index])
+        if self._filter_feature_index == -1 or contribution[self._filter_feature_index] == 1:
+            self.current_profile_element.contribute(contribution[self._base_feature_index])
 
-    def list(self) -> List[float]:
-        pass
+    def run_time_logic(self, current_time: dt.datetime):
+        stp = self._time_period.start_period(current_time)
+        previous_time = self._start_period_time if self._start_period_time is not None else stp
+        self._start_period_time = stp
+        delta = self._time_period.delta_between(previous_time, stp)
+        self._time_slots.extend([ProfileElementNative() for _ in range(delta)])
 
-
-class ProfileFieldFactoryNative(ProfileFieldFactory[np.ndarray, List[float]]):
-    def get_profile_fields(self, features: List[FeatureGrouper], contrib_tensor_definition: TensorDefinition) -> \
-            List[ProfileField[np.ndarray, List[float]]]:
-        # We only need 1 profile field per unique base_feature, filter_feature and time settings. It will calculate
-        # all the aggregates.
-        uniq_f = {
-            k: list(v) for k, v in
-            groupby(features, lambda x: (x.base_feature, x.filter_feature, x.time_period, x.time_window))
-        }
-        fields = []
-        for (bf, ff, _, _), v in uniq_f.items():
-            fields.append(ProfileFieldNative(bf, ff, contrib_tensor_definition))
-        return fields
-
-
-class ProfileNative(Profile[np.ndarray, float, float, List[float]]):
-    def __init__(self, features: List[FeatureGrouper], contrib_tensor_definition: TensorDefinition):
-        super(ProfileNative, self).__init__(features, contrib_tensor_definition)
-        # Make a dict that keeps track of which feature is stored in which field.
-        # We only need 1 profile field per unique base_feature, filter_feature and time settings. It will calculate
-        # all the aggregates.
-        uniq_f: Dict[Tuple[Feature, Feature, TimePeriod, int], List[FeatureGrouper]] = {
-            k: list(v) for k, v in
-            groupby(features, lambda x: (x.base_feature, x.filter_feature, x.time_period, x.time_window))
-        }
-        self._profile_fields: List[ProfileField[np.ndarray, List[float]]] = []
-        self._features_to_field: Dict[FeatureGrouper, ProfileField[np.ndarray, List[float]]] = {}
-        for (bf, ff, _, _), v in uniq_f.items():
-            pf = ProfileFieldNative(bf, ff, contrib_tensor_definition)
-            self._profile_fields.append(pf)
-            for f in v:
-                self._features_to_field[f] = pf
-
-    def get_profile_field_factory(self) -> ProfileFieldFactory:
-        return ProfileFieldFactoryNative()
+    def merged_profile_element(self, feature: FeatureGrouper) -> ProfileElement[float]:
+        pf = ProfileElementNative()
+        for i, e in enumerate(reversed(self._time_slots)):
+            # Only go back the time window of the current feature, as we keep max time windows for each time period,
+            # there could be more time slots than the requested feature time window
+            if i < feature.time_window:
+                pf.merge(e)
+        return pf
 
     @property
-    def profile_fields(self) -> List[ProfileField[np.ndarray, List[float]]]:
+    def current_profile_element(self) -> ProfileElement[float]:
+        # After Run time logic, the last item is the most recent period
+        return self._time_slots[self._time_window - 1]
+
+
+class ProfileNative(Profile[np.ndarray, float, float, np.ndarray]):
+    def __init__(self, features: List[FeatureGrouper], time_feature: Feature,
+                 contrib_tensor_definition: TensorDefinition):
+        super(ProfileNative, self).__init__(features)
+        # Make a dict that keeps track of which feature is stored in which field.
+        # We only need 1 profile field per unique base_feature, filter_feature and time period. It will calculate
+        # all the aggregates for the max time window
+        self._val_time_field_is_time_based(time_feature)
+        self._time_feature_index = Profile.feature_index(time_feature, contrib_tensor_definition)
+        uniq_f: Dict[Tuple[Feature, Feature, TimePeriod], List[FeatureGrouper]] = {
+            k: list(v) for k, v in
+            groupby(features, lambda x: (x.base_feature, x.filter_feature, x.time_period))
+        }
+        self._profile_fields: List[ProfileField[np.ndarray, np.ndarray]] = []
+        self._features_to_field_agg: Dict[FeatureGrouper, Tuple[ProfileFieldNative, ProfileAggregator[float]]] = {}
+        agf = ProfileAggregatorFactoryNative()
+        for (bf, ff, tp), v in uniq_f.items():
+            tw = max([f.time_window for f in v])
+            pf = ProfileFieldNative(bf, ff, tp, tw, contrib_tensor_definition)
+            self._profile_fields.append(pf)
+            for f in v:
+                self._features_to_field_agg[f] = (pf, agf.get_aggregator(f.aggregator))
+
+    def _val_time_field_is_time_based(self, feature: Feature):
+        if not FeatureHelper.is_feature_of_type(feature, FeatureTypeTimeBased):
+            raise ProfileException(
+                f'The time-field to a {self.__class__.__name__} must be fime time based. Got {feature.name} which is ' +
+                f'of type {feature.type.name}'
+            )
+
+    @property
+    def profile_fields(self) -> List[ProfileField[np.ndarray, np.ndarray]]:
         return self._profile_fields
 
-    def list(self) -> List[float]:
-        for f in self.features:
-            agg = ProfileAggregatorFactoryNative().get_aggregator(f.aggregator)
-            pf = self._features_to_field[f]
-            return agg.aggregate(pf.list())
+    def extract_date_time(self, contribution: np.ndarray) -> dt.datetime:
+        cdt = contribution[self._time_feature_index]
+        return cdt
 
+    def _get_and_aggregate(self, f: FeatureGrouper) -> float:
+        pf, agg = self._features_to_field_agg[f]
+        pe = pf.merged_profile_element(f)
+        return agg.aggregate(pe)
 
-# class ProfileFieldDict(Profile):
-#     @abstractmethod
-#     def contribute(self, key: str, value: float):
-#         pass
+    def list(self) -> np.ndarray:
+        out = [self._get_and_aggregate(f) for f in self.features]
+        return np.array(out, dtype=float)
 
 
 class ProfileElementNative(ProfileElement[float]):
@@ -201,6 +219,25 @@ class ProfileElementNative(ProfileElement[float]):
         if contribution > self.max:
             self.max = contribution
 
+    def merge(self, pe: 'ProfileElementNative[float]'):
+        if self.count == 0:
+            self.count = pe.count
+            self.mean = pe.mean
+            self.M2 = pe.M2
+            self.max = pe.max
+            self.min = pe.min
+        else:
+            count = self.count + pe.count
+            delta = self.mean - pe.mean
+            delta2 = delta * delta
+            self.mean = (self.count * self.mean + pe.count * pe.mean) / count
+            self.M2 = self.M2 + pe.M2 + delta2 * (self.count * pe.count) / count
+            self.count = count
+            if pe.max > self.max:
+                self.max = pe.max
+            if pe.min < self.min:
+                self.min = pe.min
+
 
 class ProfileAggregatorNativeCount(ProfileAggregator[float]):
     def aggregate(self, field: ProfileElementNative) -> float:
@@ -212,7 +249,7 @@ class ProfileAggregatorNativeSum(ProfileAggregator[float]):
         return field.count * field.mean
 
 
-class ProfileAggregatorNativeMean(ProfileAggregator[float]):
+class ProfileAggregatorNativeAverage(ProfileAggregator[float]):
     def aggregate(self, field: ProfileElementNative) -> float:
         return field.mean
 
@@ -222,7 +259,7 @@ class ProfileAggregatorNativeStddev(ProfileAggregator[float]):
         if field.count < 2:
             return float("nan")
         else:
-            return sqrt(field.M2 / (field.count + 1))
+            return sqrt(field.M2 / (field.count-1))
 
 
 class ProfileAggregatorNativeMin(ProfileAggregator[float]):
@@ -233,12 +270,3 @@ class ProfileAggregatorNativeMin(ProfileAggregator[float]):
 class ProfileAggregatorNativeMax(ProfileAggregator[float]):
     def aggregate(self, field: ProfileElementNative) -> float:
         return field.max
-
-
-# class ProfileDictNative(ProfileFieldDict):
-#     def __init__(self):
-#         self.field_dict: Dict[str, ProfileField] = {}
-#
-#     def contribute(self, key: str, value: float):
-#         fld = self.field_dict.setdefault(key, ProfileFieldNative())
-#         fld.contribute(value)

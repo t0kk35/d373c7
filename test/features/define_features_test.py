@@ -7,6 +7,8 @@ import d373c7.features as ft
 from typing import Any
 
 
+# TODO Add test to source for empty format code on date type features. If format code is None an error is thrown on read
+
 class TestFeatureSource(unittest.TestCase):
     def test_creation_base(self):
         name = 'test'

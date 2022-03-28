@@ -3,7 +3,8 @@ Definition of grouped features.
 (c) 2021 d373c7
 """
 import logging
-from datetime import timedelta
+from abc import ABC, abstractmethod
+from datetime import timedelta, datetime
 from dataclasses import dataclass, field
 
 from .common import LearningCategory
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @enforce_types
 @dataclass(frozen=True)
-class TimePeriod:
+class TimePeriod(ABC):
     key: int
     name: str
     pandas_window: str
@@ -28,10 +29,52 @@ class TimePeriod:
         kw = {self.datetime_window: number_of_periods}
         return timedelta(**kw)
 
+    @abstractmethod
+    def delta_between(self, dt1: datetime, dt2: datetime) -> int:
+        pass
 
-TIME_PERIOD_DAY = TimePeriod(0, 'Day', 'd', 'D', 'd')
-TIME_PERIOD_WEEK = TimePeriod(1, 'Week', 'w', 'W', 'w')
-TIME_PERIOD_MONTH = TimePeriod(2, 'Month', 'm', 'M', 'm')
+    @abstractmethod
+    def start_period(self, d: datetime) -> datetime:
+        pass
+
+
+@enforce_types
+@dataclass(frozen=True)
+class TimePeriodDay(TimePeriod):
+    def delta_between(self, dt1: datetime, dt2: datetime) -> int:
+        return (dt2 - dt1).days
+
+    def start_period(self, d: datetime) -> datetime:
+        # Remove time part
+        return datetime(year=d.year, month=d.month, day=d.day)
+
+
+@enforce_types
+@dataclass(frozen=True)
+class TimePeriodWeek(TimePeriod):
+    def delta_between(self, dt1: datetime, dt2: datetime) -> int:
+        return (dt2 - dt1).days // 7
+
+    def start_period(self, d: datetime) -> datetime:
+        # Go back to previous monday
+        r = TIME_PERIOD_DAY.start_period(d)
+        return r - timedelta(days=r.weekday())
+
+
+@enforce_types
+@dataclass(frozen=True)
+class TimePeriodMonth(TimePeriod):
+    def delta_between(self, dt1: datetime, dt2: datetime) -> int:
+        return (dt2.year - dt1.year) * 12 + dt2.month - dt1.month
+
+    def start_period(self, d: datetime) -> datetime:
+        # Remove time and go to first day of month
+        return datetime(year=d.year, month=d.month, day=1)
+
+
+TIME_PERIOD_DAY = TimePeriodDay(0, 'Day', 'd', 'D', 'd')
+TIME_PERIOD_WEEK = TimePeriodWeek(1, 'Week', 'w', 'W', 'w')
+TIME_PERIOD_MONTH = TimePeriodMonth(2, 'Month', 'm', 'M', 'm')
 
 TIME_PERIODS = [
     TIME_PERIOD_DAY,
