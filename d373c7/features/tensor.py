@@ -204,7 +204,7 @@ class TensorDefinition:
         self._val_has_numerical_features()
         t = FeatureHelper.filter_feature_type(FeatureTypeNumerical, self.features)
         t.sort(key=lambda x: x.type.precision)
-        # Last one has biggest precision
+        # Last one has the biggest precision
         return t[-1]
 
     def remove(self, feature: Feature) -> None:

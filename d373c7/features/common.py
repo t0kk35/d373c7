@@ -27,9 +27,9 @@ class LearningCategory:
     Describes the feature category. The category will be used to drive what sort of layers and learning models
     can be used on a specific feature.
     """
-    key: int
+    key: int = field(repr=False)
     name: str
-    default_panda_type: str
+    default_panda_type: str = field(repr=False)
     sort_index: int = field(init=False, repr=False)
 
     def __post_init__(self):
@@ -68,10 +68,10 @@ class FeatureType:
     Defines the datatype of a particular Feature. It will tell us what sort of data a feature is holding, like
     string values, a float value, an integer value etc... See below for the specific implementations
     """
-    key: int
+    key: int = field(repr=False)
     name: str
-    learning_category: LearningCategory
-    precision: int = 0
+    learning_category: LearningCategory = field(repr=False)
+    precision: int = field(default=0, repr=False)
 
     @staticmethod
     def max_precision(ft1: 'FeatureType', ft2: 'FeatureType') -> 'FeatureType':
@@ -131,7 +131,7 @@ class Feature(ABC):
     """
     name: str
     type: FeatureType
-    embedded_features: List['Feature'] = field(default_factory=list, init=False, hash=False)
+    embedded_features: List['Feature'] = field(default_factory=list, init=False, hash=False, repr=False)
 
     def _val_type(self, f_type: Type[FeatureType]) -> None:
         """
@@ -142,7 +142,7 @@ class Feature(ABC):
         """
         if not FeatureHelper.is_feature_of_type(self, f_type):
             raise FeatureDefinitionException(
-                f'The FeatureType of a {self.__class__.__name__} must be {f_type.__class__.__name__}. Got <{self.type}>'
+                f'The FeatureType of a {self.__class__.__name__} must be {f_type.__name__}. Got <{self.type.name}>'
             )
 
     def val_int_type(self) -> None:
@@ -321,7 +321,7 @@ class FeatureHelper:
         return [f for f in features if not isinstance(f, feature_class)]
 
     @classmethod
-    def filter_feature_type(cls, feature_type: Type[FeatureType], features: List[T]) -> List[T]:
+    def filter_feature_type(cls, feature_type: Type[FeatureType], features: List[Feature]) -> List[Feature]:
         """
         Class method to filter a list of features. The method will return the features from the input
         that with type that match the requested feature_type

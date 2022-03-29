@@ -6,9 +6,9 @@ import logging
 from typing import List, Optional, Union, Dict
 from dataclasses import dataclass, field
 from .common import enforce_types
-from ..features.common import Feature, FeatureCategorical
+from ..features.common import Feature, FeatureCategorical, FeatureDefinitionException
 from ..features.common import FeatureWithBaseFeature, LearningCategory, LEARNING_CATEGORY_NONE
-
+from ..features.common import FeatureHelper, FeatureTypeTimeBased
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,9 @@ class FeatureSource(Feature):
     format_code: Optional[str] = None
     default: Optional[Union[str, float, int]] = None
 
+    def __post_init__(self):
+        self._val_format_code_not_none_for_time()
+
     @property
     def inference_ready(self) -> bool:
         # A source feature has no inference attributes
@@ -31,6 +34,13 @@ class FeatureSource(Feature):
     def learning_category(self) -> LearningCategory:
         # Should be the learning category of the type of the source feature
         return self.type.learning_category
+
+    def _val_format_code_not_none_for_time(self):
+        if FeatureHelper.is_feature_of_type(self, FeatureTypeTimeBased):
+            if self.format_code is None:
+                raise FeatureDefinitionException(
+                    f'Feature {self.name} is time based, its format_code should not be <None>'
+                )
 
 
 @enforce_types

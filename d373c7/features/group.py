@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 
 from .common import LearningCategory
 from ..common import enforce_types
-from ..features.common import Feature, FeatureWithBaseFeature
+from ..features.common import Feature, FeatureTypeString, FeatureWithBaseFeature, FeatureHelper
+from ..features.common import FeatureDefinitionException
 from ..features.expressions import FeatureFilter
 from typing import Optional
 
@@ -19,11 +20,11 @@ logger = logging.getLogger(__name__)
 @enforce_types
 @dataclass(frozen=True)
 class TimePeriod(ABC):
-    key: int
+    key: int = field(repr=False)
     name: str
-    pandas_window: str
-    numpy_window: str
-    datetime_window: str
+    pandas_window: str = field(repr=False)
+    numpy_window: str = field(repr=False)
+    datetime_window: str = field(repr=False)
 
     def time_delta(self, number_of_periods: int):
         kw = {self.datetime_window: number_of_periods}
@@ -86,9 +87,9 @@ TIME_PERIODS = [
 @enforce_types
 @dataclass(frozen=True)
 class Aggregator:
-    key: int
+    key: int = field(repr=False)
     name: str
-    panda_agg_func: str
+    panda_agg_func: str = field(repr=False)
 
 
 AGGREGATOR_SUM = Aggregator(0, 'Sum', 'sum')
@@ -103,6 +104,7 @@ AGGREGATOR_STDDEV = Aggregator(5, 'Standard Deviation', 'std')
 @dataclass(unsafe_hash=True)
 class FeatureGrouper(FeatureWithBaseFeature):
     group_feature: Feature
+    dimension_feature: Optional[Feature] = field(compare=False)
     filter_feature: Optional[FeatureFilter] = field(compare=False)
     time_period: TimePeriod
     time_window: int
@@ -112,13 +114,31 @@ class FeatureGrouper(FeatureWithBaseFeature):
         # Make sure the type float based.
         self.val_float_type()
         self.val_base_feature_is_float()
-        # Embedded features are the base_feature, the group feature and the filter (if set) + their embedded features.
+        self._val_dimension_feature_is_str()
+        # Embedded features are the base_feature, the group feature, the filter (if set) and the dimension
+        # feature (if set) + their embedded features.
         eb = [self.group_feature, self.base_feature]
         eb.extend(self.group_feature.embedded_features + self.base_feature.embedded_features)
-        if self.filter_feature is not None:
-            eb.append(self.filter_feature)
-            eb.extend(self.filter_feature.embedded_features)
+        for f in (self.filter_feature, self.dimension_feature):
+            if f is not None:
+                eb.append(f)
+                eb.extend(f.embedded_features)
         self.embedded_features = list(set(eb))
+
+    def _val_dimension_feature_is_str(self) -> None:
+        """
+        Validation method to check if the dimension_feature is of type str.
+        Dimension features must be of type string as the profiling will build a dict with this feature as key
+        Will throw a FeatureDefinitionException if the base feature is NOT a float.
+
+        @return: None
+        """
+        if self.dimension_feature is not None and \
+                not FeatureHelper.is_feature_of_type(self.dimension_feature, FeatureTypeString):
+            raise FeatureDefinitionException(
+                f'Dimension feature of a {self.__class__.__name__} must be a string type. ' +
+                f'Got <{type(self.dimension_feature.type)}>'
+            )
 
     @property
     def inference_ready(self) -> bool:

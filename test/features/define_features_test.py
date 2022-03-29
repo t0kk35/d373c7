@@ -7,8 +7,6 @@ import d373c7.features as ft
 from typing import Any
 
 
-# TODO Add test to source for empty format code on date type features. If format code is None an error is thrown on read
-
 class TestFeatureSource(unittest.TestCase):
     def test_creation_base(self):
         name = 'test'
@@ -46,6 +44,12 @@ class TestFeatureSource(unittest.TestCase):
         self.assertEqual(f.default, default, f'Default should be {default}')
         self.assertIsNone(f.format_code, 'Should not have format code')
         self.assertEqual(len(f.embedded_features), 0, 'Should not have embedded features')
+
+    def test_create_source_time_without_format_code_bad(self):
+        name = 'test'
+        f_type = ft.FEATURE_TYPE_DATE_TIME
+        with self.assertRaises(ft.FeatureDefinitionException):
+            _ = ft.FeatureSource(name, f_type)
 
     def test_equality(self):
         name_1 = 'test_1'
@@ -452,36 +456,74 @@ class TestFeatureGrouper(unittest.TestCase):
         f_type = ft.FEATURE_TYPE_FLOAT
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fs = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
+        fd = ft.FeatureSource('Dimension', ft.FEATURE_TYPE_STRING)
         ff = ft.FeatureFilter('Filter', ft.FEATURE_TYPE_BOOL, feature_expression, [fs])
         tp = ft.TIME_PERIOD_DAY
         tw = 3
         ag = ft.AGGREGATOR_COUNT
-        f = ft.FeatureGrouper(name, f_type, fa, fs, ff, tp, tw, ag)
+        f = ft.FeatureGrouper(name, f_type, fa, fs, fd, ff, tp, tw, ag)
         self.assertIsInstance(f, ft.FeatureGrouper, f'Unexpected Type {type(f)}')
         self.assertEqual(f.name, name, f'Feature Name should be {name}')
         self.assertEqual(f.type, f_type, f'Feature Type should be {f_type}')
         self.assertEqual(f.group_feature, fs, f'Group should have been {fs}')
+        self.assertEqual(f.dimension_feature, fd, f'Group should have been {fd}')
         self.assertEqual(f.filter_feature, ff, f'Filter should have been {ff}')
         self.assertEqual(f.time_period, tp, f'TimePeriod should have been {tp}')
         self.assertEqual(f.time_window, tw, f'TimeWindow should have been {tw}')
         self.assertEqual(f.aggregator, ag, f'Aggregator should have been {ag}')
-        self.assertEqual(len(f.embedded_features), 3, 'Should have had 3 embedded features')
+        self.assertEqual(len(f.embedded_features), 4, 'Should have had 4 embedded features')
         self.assertEqual(f.learning_category, ft.LEARNING_CATEGORY_CONTINUOUS, f'String should have learning type cont')
 
-    def creation_not_float_bad(self):
+    def test_creation_base_optional_features(self):
+        name = 'test'
+        f_type = ft.FEATURE_TYPE_FLOAT
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
+        fs = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
+        tp = ft.TIME_PERIOD_DAY
+        tw = 3
+        ag = ft.AGGREGATOR_COUNT
+        f = ft.FeatureGrouper(name, f_type, fa, fs, None, None, tp, tw, ag)
+        self.assertIsInstance(f, ft.FeatureGrouper, f'Unexpected Type {type(f)}')
+        self.assertEqual(f.name, name, f'Feature Name should be {name}')
+        self.assertEqual(f.type, f_type, f'Feature Type should be {f_type}')
+        self.assertEqual(f.group_feature, fs, f'Group should have been {fs}')
+        self.assertEqual(f.dimension_feature, None, f'Group should have been None')
+        self.assertEqual(f.filter_feature, None, f'Filter should have been None')
+        self.assertEqual(f.time_period, tp, f'TimePeriod should have been {tp}')
+        self.assertEqual(f.time_window, tw, f'TimeWindow should have been {tw}')
+        self.assertEqual(f.aggregator, ag, f'Aggregator should have been {ag}')
+        self.assertEqual(len(f.embedded_features), 2, 'Should have had 2 embedded features')
+        self.assertEqual(f.learning_category, ft.LEARNING_CATEGORY_CONTINUOUS, f'String should have learning type cont')
+
+    def test_creation_not_float_bad(self):
         name = 'test'
         f_type = ft.FEATURE_TYPE_STRING
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fs = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
+        fd = ft.FeatureSource('Dimension', ft.FEATURE_TYPE_STRING)
         ff = ft.FeatureFilter('Filter', ft.FEATURE_TYPE_BOOL, feature_expression, [fs])
         tp = ft.TIME_PERIOD_DAY
         tw = 3
         ag = ft.AGGREGATOR_COUNT
-        with self.assertRaises(TypeError):
-            _ = ft.FeatureGrouper(name, f_type, fa, fs, ff, tp, tw, ag)
+        with self.assertRaises(ft.FeatureDefinitionException):
+            # Own type is not float
+            _ = ft.FeatureGrouper(name, f_type, fa, fs, fd, ff, tp, tw, ag)
         with self.assertRaises(ft.FeatureDefinitionException):
             # base is not a float
-            _ = ft.FeatureGrouper(name, ft.FEATURE_TYPE_FLOAT, fs, fs, ff, tp, tw, ag)
+            _ = ft.FeatureGrouper(name, ft.FEATURE_TYPE_FLOAT, fs, fs, fd, ff, tp, tw, ag)
+
+    def test_creation_dimension_not_str_bad(self):
+        name = 'test'
+        f_type = ft.FEATURE_TYPE_FLOAT
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
+        fs = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
+        fd = ft.FeatureSource('Dimension', ft.FEATURE_TYPE_FLOAT)
+        ff = ft.FeatureFilter('Filter', ft.FEATURE_TYPE_BOOL, feature_expression, [fs])
+        tp = ft.TIME_PERIOD_DAY
+        tw = 3
+        ag = ft.AGGREGATOR_COUNT
+        with self.assertRaises(ft.FeatureDefinitionException):
+            _ = ft.FeatureGrouper(name, f_type, fa, fs, fd, ff, tp, tw, ag)
 
     def test_equality(self):
         name_1 = 'test_1'
@@ -492,6 +534,8 @@ class TestFeatureGrouper(unittest.TestCase):
         fa_2 = ft.FeatureSource('Amount2', ft.FEATURE_TYPE_FLOAT)
         fs_1 = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
         fs_2 = ft.FeatureSource('Source2', ft.FEATURE_TYPE_STRING)
+        fd_1 = ft.FeatureSource('Dimension', ft.FEATURE_TYPE_STRING)
+        fd_2 = ft.FeatureSource('Dimension2', ft.FEATURE_TYPE_STRING)
         ff_1 = ft.FeatureFilter('Filter', ft.FEATURE_TYPE_BOOL, feature_expression, [fs_1])
         ff_2 = ft.FeatureFilter('Filter2', ft.FEATURE_TYPE_BOOL, feature_expression, [fs_2])
         tp_1 = ft.TIME_PERIOD_DAY
@@ -501,16 +545,18 @@ class TestFeatureGrouper(unittest.TestCase):
         ag_1 = ft.AGGREGATOR_COUNT
         ag_2 = ft.AGGREGATOR_STDDEV
 
-        fg_1 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, ff_1, tp_1, tw_1, ag_1)
-        fg_9 = ft.FeatureGrouper(name_2, f_type_1, fa_1, fs_1, ff_1, tp_1, tw_1, ag_2)
-        fg_2 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, ff_1, tp_1, tw_1, ag_1)
-        fg_3 = ft.FeatureGrouper(name_1, f_type_2, fa_1, fs_1, ff_1, tp_1, tw_1, ag_1)
-        fg_4 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_2, ff_1, tp_1, tw_1, ag_1)
-        fg_5 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, ff_2, tp_1, tw_1, ag_1)
-        fg_6 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, ff_1, tp_2, tw_1, ag_1)
-        fg_7 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, ff_1, tp_1, tw_2, ag_1)
-        fg_8 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, ff_1, tp_1, tw_1, ag_2)
-        fg_10 = ft.FeatureGrouper(name_1, f_type_1, fa_2, fs_1, ff_1, tp_1, tw_1, ag_1)
+        fg_1 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, fd_1, ff_1, tp_1, tw_1, ag_1)
+        fg_9 = ft.FeatureGrouper(name_2, f_type_1, fa_1, fs_1, fd_1, ff_1, tp_1, tw_1, ag_2)
+        fg_2 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, fd_1, ff_1, tp_1, tw_1, ag_1)
+        fg_3 = ft.FeatureGrouper(name_1, f_type_2, fa_1, fs_1, fd_1, ff_1, tp_1, tw_1, ag_1)
+        fg_4 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_2, fd_1, ff_1, tp_1, tw_1, ag_1)
+        fg_5 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, fd_1, ff_2, tp_1, tw_1, ag_1)
+        fg_6 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, fd_1, ff_1, tp_2, tw_1, ag_1)
+        fg_7 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, fd_1, ff_1, tp_1, tw_2, ag_1)
+        fg_8 = ft.FeatureGrouper(name_1, f_type_1, fa_1, fs_1, fd_1, ff_1, tp_1, tw_1, ag_2)
+        fg_10 = ft.FeatureGrouper(name_1, f_type_1, fa_2, fs_1, fd_1, ff_1, tp_1, tw_1, ag_1)
+        fg_11 = ft.FeatureGrouper(name_1, f_type_1, fa_2, fs_1, fd_2, ff_1, tp_1, tw_1, ag_1)
+        fg_12 = ft.FeatureGrouper(name_1, f_type_1, fa_2, fs_1, None, ff_1, tp_1, tw_1, ag_1)
 
         self.assertEqual(fg_1, fg_2, f'Should have been equal')
         self.assertNotEqual(fg_1, fg_9, f'Should not have been equal. Different Name')
@@ -521,6 +567,8 @@ class TestFeatureGrouper(unittest.TestCase):
         self.assertNotEqual(fg_1, fg_6, f'Should not have been equal. Different Time Period')
         self.assertNotEqual(fg_1, fg_7, f'Should not have been equal. Different Time Window')
         self.assertNotEqual(fg_1, fg_8, f'Should not have been equal. Different Aggregator')
+        self.assertNotEqual(fg_1, fg_11, f'Should not have been equal. Different Dimension')
+        self.assertNotEqual(fg_1, fg_12, f'Should not have been equal. Dimension Feature is None')
 
 
 class TestFeatureType(unittest.TestCase):
@@ -547,16 +595,44 @@ class TestFeatureType(unittest.TestCase):
         self.assertEqual(
             ft.FeatureHelper.is_feature_of_type(f, ft.FeatureTypeBool), True, f'Should have been a BoolType'
         )
-        f = ft.FeatureSource('Source', ft.FEATURE_TYPE_DATE)
+        f = ft.FeatureSource('Source', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
         self.assertEqual(
             ft.FeatureHelper.is_feature_of_type(f, ft.FeatureTypeTimeBased), True, f'Should have been a TimeBaseType'
         )
 
 
-# TODO Add FeatureHelper.Filter tests.
-class TestFeatureFilterNot(unittest.TestCase):
-    def test_filter_not(self):
-        pass
+class TestFeatureHelper(unittest.TestCase):
+    def test_feature_type(self):
+        t = ft.FEATURE_TYPE_FLOAT
+        f = ft.FeatureSource('Source', t)
+        self.assertTrue(ft.FeatureHelper.is_feature_of_type(f, ft.FeatureTypeFloat), f'Should have been float type')
+        self.assertFalse(ft.FeatureHelper.is_feature_of_type(f, ft.FeatureTypeString), f'Should not have been string')
+
+    def test_is_feature(self):
+        f = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
+        self.assertTrue(ft.FeatureHelper.is_feature(f, ft.FeatureSource), f'Should have been Source feature')
+        self.assertFalse(ft.FeatureHelper.is_feature(f, ft.FeatureGrouper), f'Should not have been grouper feature')
+
+    def test_filter_feature(self):
+        f1 = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
+        f2 = ft.FeatureOneHot('Oh', ft.FEATURE_TYPE_INT_8, f1)
+        fl = ft.FeatureHelper.filter_feature(ft.FeatureSource, [f1, f2])
+        self.assertEqual(len(fl), 1, f'Should only have returned 1 feature. Got {len(fl)}')
+        self.assertTrue(ft.FeatureHelper.is_feature(fl[0], ft.FeatureSource), f'Should have returned a source feature')
+
+    def test_filter_feature_not(self):
+        f1 = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
+        f2 = ft.FeatureOneHot('Oh', ft.FEATURE_TYPE_INT_8, f1)
+        fl = ft.FeatureHelper.filter_not_feature(ft.FeatureSource, [f1, f2])
+        self.assertEqual(len(fl), 1, f'Should only have returned 1 feature. Got {len(fl)}')
+        self.assertTrue(ft.FeatureHelper.is_feature(fl[0], ft.FeatureOneHot), f'Should have returned a source feature')
+
+    def test_filter_feature_type(self):
+        f1 = ft.FeatureSource('Source', ft.FEATURE_TYPE_STRING)
+        f2 = ft.FeatureOneHot('Oh', ft.FEATURE_TYPE_INT_8, f1)
+        fl = ft.FeatureHelper.filter_feature_type(ft.FeatureTypeString, [f1, f2])
+        self.assertEqual(len(fl), 1, f'Should only have returned 1 feature. Got {len(fl)}')
+        self.assertEqual(fl[0], f1, f'Should have returned the source feature')
 
 
 def main():
