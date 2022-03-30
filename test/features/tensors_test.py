@@ -25,6 +25,13 @@ class TestTensorCreate(unittest.TestCase):
         with self.assertRaises(ft.TensorDefinitionException):
             _ = ft.TensorDefinition(name_t, [f1, f1])
 
+    def test_duplicate_name_bad(self):
+        name_t = 'test-tensor'
+        f1 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_STRING)
+        f2 = ft.FeatureSource('test-feature-1', ft.FEATURE_TYPE_FLOAT)
+        with self.assertRaises(ft.TensorDefinitionException):
+            _ = ft.TensorDefinition(name_t, [f1, f2])
+
     def test_overlap_base_feature(self):
         # Should fail because the base feature is shared
         name_t = 'test-tensor'

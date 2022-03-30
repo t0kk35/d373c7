@@ -51,10 +51,11 @@ class TensorDefinition:
             )
 
     def _val_duplicate_entries(self):
-        if len(list(set(self.features))) != len(self.features):
+        names = [f.name for f in self.features]
+        if len(list(set(names))) != len(names):
             raise TensorDefinitionException(
                 f'Tensor definition has duplicate entries ' +
-                f' <{[f.name for f in self.features if self.features.count(f) > 1]}>'
+                f' <{[n for n in names if names.count(n) > 1]}>'
             )
 
     def _val_not_empty(self):

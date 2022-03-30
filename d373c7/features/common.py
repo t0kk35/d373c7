@@ -321,7 +321,7 @@ class FeatureHelper:
         return [f for f in features if not isinstance(f, feature_class)]
 
     @classmethod
-    def filter_feature_type(cls, feature_type: Type[FeatureType], features: List[Feature]) -> List[Feature]:
+    def filter_feature_type(cls, feature_type: Type[FeatureType], features: List[T]) -> List[T]:
         """
         Class method to filter a list of features. The method will return the features from the input
         that with type that match the requested feature_type

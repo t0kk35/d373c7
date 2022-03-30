@@ -11,11 +11,9 @@ import pandas as pd
 import d373c7.engines as en
 import d373c7.features as ft
 
-from d373c7.features.group import Aggregator
-from d373c7.engines.profile import ProfileNative, ProfileException, ProfileElementNative
-from d373c7.engines.profile import ProfileAggregatorNativeCount, ProfileAggregatorNativeSum
-from d373c7.engines.profile import ProfileAggregatorNativeAverage, ProfileAggregatorNativeStddev
-from d373c7.engines.profile import ProfileAggregatorNativeMax, ProfileAggregatorNativeMin
+from d373c7.features.group import Aggregator, AGGREGATOR_SUM, AGGREGATOR_COUNT, AGGREGATOR_MIN, AGGREGATOR_MAX
+from d373c7.features.group import AGGREGATOR_AVG, AGGREGATOR_STDDEV
+from d373c7.engines.profile import ProfileNative, ProfileException, ProfileElementNative, ProfileElementNativeDict
 
 FILES_DIR = './files/'
 
@@ -31,22 +29,22 @@ class TestNativeElement(unittest.TestCase):
         for e in lst:
             pe.contribute(e)
         x = len(lst)
-        y = ProfileAggregatorNativeCount().aggregate(pe)
+        y = pe.aggregate(0, AGGREGATOR_COUNT)
         self.assertEqual(x, y, f'Counts should have been equal {x} {y}')
         x = sum(lst)
-        y = ProfileAggregatorNativeSum().aggregate(pe)
+        y = pe.aggregate(0, AGGREGATOR_SUM)
         self.assertEqual(x, y, f'Sums should have been equal {x} {y}')
         x = stat.mean(lst)
-        y = ProfileAggregatorNativeAverage().aggregate(pe)
+        y = pe.aggregate(0, AGGREGATOR_AVG)
         self.assertAlmostEqual(x, y, places=15, msg=f'Averages should have been equal {x} {y}')
         x = stat.stdev(lst)
-        y = ProfileAggregatorNativeStddev().aggregate(pe)
+        y = pe.aggregate(0, AGGREGATOR_STDDEV)
         self.assertAlmostEqual(x, y, places=15, msg=f'Standard deviation should have been equal {x} {y}')
         x = max(lst)
-        y = ProfileAggregatorNativeMax().aggregate(pe)
+        y = pe.aggregate(0, AGGREGATOR_MAX)
         self.assertEqual(x, y, f'Maximums should have been equal {x} {y}')
         x = min(lst)
-        y = ProfileAggregatorNativeMin().aggregate(pe)
+        y = pe.aggregate(0, AGGREGATOR_MIN)
         self.assertEqual(x, y, f'Minimums should have been equal {x} {y}')
 
     def test_element_merge_native_element(self):
@@ -63,61 +61,145 @@ class TestNativeElement(unittest.TestCase):
         pe3.merge(pe1)
         pe3.merge(pe2)
         x = len(lst3)
-        y = ProfileAggregatorNativeCount().aggregate(pe3)
+        y = pe3.aggregate(0, AGGREGATOR_COUNT)
         self.assertEqual(x, y, f'Counts should have been equal {x} {y}')
         x = sum(lst3)
-        y = ProfileAggregatorNativeSum().aggregate(pe3)
+        y = pe3.aggregate(0, AGGREGATOR_SUM)
         self.assertEqual(x, y, f'Sums should have been equal {x} {y}')
         x = stat.mean(lst3)
-        y = ProfileAggregatorNativeAverage().aggregate(pe3)
+        y = pe3.aggregate(0, AGGREGATOR_AVG)
         self.assertAlmostEqual(x, y, places=15, msg=f'Averages should have been equal {x} {y}')
         x = stat.stdev(lst3)
-        y = ProfileAggregatorNativeStddev().aggregate(pe3)
+        y = pe3.aggregate(0, AGGREGATOR_STDDEV)
         self.assertAlmostEqual(x, y, places=15, msg=f'Standard deviation should have been equal {x} {y}')
         x = max(lst3)
-        y = ProfileAggregatorNativeMax().aggregate(pe3)
+        y = pe3.aggregate(0, AGGREGATOR_MAX)
         self.assertEqual(x, y, f'Maximums should have been equal {x} {y}')
         x = min(lst3)
-        y = ProfileAggregatorNativeMin().aggregate(pe3)
+        y = pe3.aggregate(0, AGGREGATOR_MIN)
         self.assertEqual(x, y, f'Minimums should have been equal {x} {y}')
+
+    def merge_empty_element(self):
+        lst1 = [1.0, 2.0, 2.5, 3, 5, 5.5]
+        pe1 = ProfileElementNative()
+        for e in lst1:
+            pe1.contribute(e)
+        pe2 = ProfileElementNative()
+        pe3 = ProfileElementNative()
+        pe3.merge(pe1)
+        pe3.merge(pe2)
+        x = len(lst1)
+        y = pe3.aggregate(0, AGGREGATOR_COUNT)
+        self.assertEqual(x, y, f'Counts should have been equal {x} {y}')
+        x = sum(lst1)
+        y = pe3.aggregate(0, AGGREGATOR_SUM)
+        self.assertEqual(x, y, f'Sums should have been equal {x} {y}')
+        x = stat.mean(lst1)
+        y = pe3.aggregate(0, AGGREGATOR_AVG)
+        self.assertAlmostEqual(x, y, places=15, msg=f'Averages should have been equal {x} {y}')
+        x = stat.stdev(lst1)
+        y = pe3.aggregate(0, AGGREGATOR_STDDEV)
+        self.assertAlmostEqual(x, y, places=15, msg=f'Standard deviation should have been equal {x} {y}')
+        x = max(lst1)
+        y = pe3.aggregate(0, AGGREGATOR_MAX)
+        self.assertEqual(x, y, f'Maximums should have been equal {x} {y}')
+        x = min(lst1)
+        y = pe3.aggregate(0, AGGREGATOR_MIN)
+        self.assertEqual(x, y, f'Minimums should have been equal {x} {y}')
+
+
+class TestNativeDictElement(unittest.TestCase):
+    def test_base_native_dict_element(self):
+        lst = [('a', 1.0), ('b', 2.0), ('b', 2.5), ('a', 3), ('a', 5), ('c', 5.5)]
+        pe = ProfileElementNativeDict()
+        for k, v in lst:
+            pe.contribute((k, v))
+
+        for key in set([e for e, _ in lst]):
+            # Make a list with just one of the keys
+            f_lst = [v for k, v in lst if k == key]
+            x = len(f_lst)
+            y = pe.aggregate((key, 0), AGGREGATOR_COUNT)
+            self.assertEqual(x, y, f'Counts should have been equal {x} {y} for key {key}')
+            x = sum(f_lst)
+            y = pe.aggregate((key, 0), AGGREGATOR_SUM)
+            self.assertEqual(x, y, f'Sums should have been equal {x} {y} for key {key}')
+            x = stat.mean(f_lst)
+            y = pe.aggregate((key, 0), AGGREGATOR_AVG)
+            if len(f_lst) > 1:
+                self.assertAlmostEqual(x, y, places=15, msg=f'Averages should have been equal {x} {y} for key {key}')
+                x = stat.stdev(f_lst)
+                y = pe.aggregate((key, 0), AGGREGATOR_STDDEV)
+                self.assertAlmostEqual(x, y, places=15, msg=f'Std dev should have been equal {x} {y} for key {key}')
+            x = max(f_lst)
+            y = pe.aggregate((key, 0), AGGREGATOR_MAX)
+            self.assertEqual(x, y, f'Maximums should have been equal {x} {y} for key {key}')
+            x = min(f_lst)
+            y = pe.aggregate((key, 0), AGGREGATOR_MIN)
+            self.assertEqual(x, y, f'Minimums should have been equal {x} {y} for key {key}')
+
+    def test_element_merge_native_element(self):
+        lst1 = [('a', 1.0), ('b', 2.0), ('b', 2.5), ('a', 3)]
+        lst2 = [('a', 5), ('c', 5.5)]
+        lst3 = lst1 + lst2
+        pe1 = ProfileElementNativeDict()
+        for k, v in lst1:
+            pe1.contribute((k, v))
+        pe2 = ProfileElementNativeDict()
+        for k, v in lst2:
+            pe2.contribute((k, v))
+        pe3 = ProfileElementNativeDict()
+        pe3.merge(pe1)
+        pe3.merge(pe2)
+
+        for key in set([e for e, _ in lst3]):
+            # Make a list with just one of the keys
+            f_lst = [v for k, v in lst3 if k == key]
+            x = len(f_lst)
+            y = pe3.aggregate((key, 0), AGGREGATOR_COUNT)
+            self.assertEqual(x, y, f'Counts should have been equal {x} {y} for key {key}')
 
 
 class TestNativeProfile(unittest.TestCase):
     def test_base_base_feature_not_in_td(self):
+        tp = ft.TIME_PERIOD_DAY
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
-        fgc = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_COUNT)
+        fgc = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fc])
         with self.assertRaises(ProfileException):
             _ = ProfileNative([fgc], fd, td)
 
     def test_base_filter_not_in_td(self):
+        tp = ft.TIME_PERIOD_DAY
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
         ff = ft.FeatureFilter('Filter', ft.FEATURE_TYPE_BOOL, card_is_1, [fc])
-        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, ff, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_COUNT)
+        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ff, tp, 5, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fa, fc, fd])
         with self.assertRaises(ProfileException):
             _ = ProfileNative([fg], fd, td)
 
     def test_base_time_feature_not_in_td(self):
+        tp = ft.TIME_PERIOD_DAY
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
         ff = ft.FeatureFilter('Filter', ft.FEATURE_TYPE_BOOL, card_is_1, [fc])
-        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, ff, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_COUNT)
+        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ff, tp, 5, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fa, fc])
         with self.assertRaises(ProfileException):
             _ = ProfileNative([fg], fd, td)
 
     def test_base_bad_aggregator(self):
+        tp = ft.TIME_PERIOD_DAY
         bag = Aggregator(0, 'Bad', 'bad')
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
-        fgc = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, bag)
+        fgc = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, bag)
         td = ft.TensorDefinition('Source', [fa, fc])
         with self.assertRaises(ProfileException):
             _ = ProfileNative([fgc], fd, td)
@@ -126,15 +208,16 @@ class TestNativeProfile(unittest.TestCase):
         # The dates range for over 5 days. So a 5-day profile should give the full range of the data.
         threads = 1
         file = FILES_DIR + 'engine_test_base_comma.csv'
+        tp = ft.TIME_PERIOD_DAY
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
-        fgc = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_COUNT)
-        fgs = ft.FeatureGrouper('S', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_SUM)
-        fga = ft.FeatureGrouper('A', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_AVG)
-        fgt = ft.FeatureGrouper('ST', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_STDDEV)
-        fgx = ft.FeatureGrouper('X', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_MAX)
-        fgm = ft.FeatureGrouper('M', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_MIN)
+        fgc = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, ft.AGGREGATOR_COUNT)
+        fgs = ft.FeatureGrouper('S', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, ft.AGGREGATOR_SUM)
+        fga = ft.FeatureGrouper('A', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, ft.AGGREGATOR_AVG)
+        fgt = ft.FeatureGrouper('ST', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, ft.AGGREGATOR_STDDEV)
+        fgx = ft.FeatureGrouper('M', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, ft.AGGREGATOR_MAX)
+        fgm = ft.FeatureGrouper('M', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, ft.AGGREGATOR_MIN)
         td = ft.TensorDefinition('Source', [fa, fc, fd])
         with en.EnginePandasNumpy(num_threads=threads) as e:
             df = e.from_csv(td, file, inference=False)
@@ -142,7 +225,7 @@ class TestNativeProfile(unittest.TestCase):
         a = df.to_numpy()
         for i in range(len(a)):
             p.contribute(a[i])
-        x = p.list()
+        x = p.list(a[len(a)-1])
         self.assertEqual(x[0], len(a[:, 0]), f'Counts do not match {x[0]} {len(a[:, 0])} ')
         self.assertEqual(x[1], np.sum(a[:, 0]), f'Sums do not match {x[1]} {np.sum(a[:, 0])}')
         self.assertEqual(x[2], np.average(a[:, 0]), f'Averages do not match {x[2]} {np.average(a[:, 0])}')
@@ -154,11 +237,12 @@ class TestNativeProfile(unittest.TestCase):
         # Let's repeat and see if the filtering works. Filter out the entries of CARD-1
         threads = 1
         file = FILES_DIR + 'engine_test_base_comma.csv'
+        tp = ft.TIME_PERIOD_DAY
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
         ff = ft.FeatureFilter('Filter', ft.FEATURE_TYPE_BOOL, card_is_1, [fc])
-        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, ff, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_COUNT)
+        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ff, tp, 5, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fa, fc, fd, ff])
         with en.EnginePandasNumpy(num_threads=threads) as e:
             df = e.from_csv(td, file, inference=False)
@@ -166,7 +250,7 @@ class TestNativeProfile(unittest.TestCase):
         a = df.to_numpy()
         for i in range(len(a)):
             p.contribute(a[i])
-        x = p.list()
+        x = p.list(a[len(a)-1])
         # Filter the input, this should give the same result as the profile. (If the profile applies the filter)
         y = df[df['Filter'] == 1].to_numpy()
         self.assertEqual(x[0], len(y[:, 0]), f'Counts do not match {x[0]} {len(y[:, 0])} ')
@@ -180,7 +264,7 @@ class TestNativeProfile(unittest.TestCase):
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
         # Aggregate for 1 week only.
-        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, tp, 1, ft.AGGREGATOR_COUNT)
+        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 1, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fa, fc, fd])
         with en.EnginePandasNumpy(num_threads=threads) as e:
             df = e.from_csv(td, file, inference=False)
@@ -201,7 +285,7 @@ class TestNativeProfile(unittest.TestCase):
                 # week changed, count should have been reset.
                 c = 1
                 start_date = d
-            self.assertEqual(p.list()[0], float(c), f'Counts do not match {p.list()[0]} {float(c)}')
+            self.assertEqual(p.list(a[i])[0], float(c), f'Counts do not match {p.list(a[i])[0]} {float(c)}')
 
     def test_base_same_month(self):
         # Let's do some month testing
@@ -212,7 +296,7 @@ class TestNativeProfile(unittest.TestCase):
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
         # Aggregate for 1 month only.
-        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, tp, 1, ft.AGGREGATOR_COUNT)
+        fg = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 1, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fa, fc, fd])
         with en.EnginePandasNumpy(num_threads=threads) as e:
             df = e.from_csv(td, file, inference=False)
@@ -233,7 +317,7 @@ class TestNativeProfile(unittest.TestCase):
                 # Month changed, count should have been reset.
                 c = 1
                 start_date = d
-            self.assertEqual(p.list()[0], float(c), f'Counts do not match {p.list()[0]} {float(c)}')
+            self.assertEqual(p.list(a[i])[0], float(c), f'Counts do not match {p.list(a[i])[0]} {float(c)}')
 
     # Multiple day periods
     def test_multiple_day_periods(self):
@@ -245,8 +329,8 @@ class TestNativeProfile(unittest.TestCase):
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
-        fgc5 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 5, ft.AGGREGATOR_COUNT)
-        fgc2 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_COUNT)
+        fgc5 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 5, ft.AGGREGATOR_COUNT)
+        fgc2 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 2, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fa, fc, fd])
         with en.EnginePandasNumpy(num_threads=threads) as e:
             df = e.from_csv(td, file, inference=False)
@@ -257,7 +341,7 @@ class TestNativeProfile(unittest.TestCase):
             p.contribute(a[i])
             d = tp.start_period(df.iloc[i]['Date'].to_pydatetime())
             g = tp.delta_between(start_date, d) - 1 if i > 1 else 0
-            x = p.list()
+            x = p.list(a[i])
             self.assertEqual(x[0], i+1, f'5 day counts do not match {x[0]} {i+1} ')
             self.assertEqual(x[1], i+1-g, f'2 day counts do not match {x[1]} {i+1-g} ')
 
@@ -271,8 +355,8 @@ class TestNativeProfile(unittest.TestCase):
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
-        fgc2 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, tp, 2, ft.AGGREGATOR_COUNT)
-        fgc1 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, tp, 1, ft.AGGREGATOR_COUNT)
+        fgc2 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 2, ft.AGGREGATOR_COUNT)
+        fgc1 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 1, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fa, fc, fd])
         with en.EnginePandasNumpy(num_threads=threads) as e:
             df = e.from_csv(td, file, inference=False)
@@ -284,7 +368,7 @@ class TestNativeProfile(unittest.TestCase):
             p.contribute(a[i])
             d = tp.start_period(df.iloc[i]['Date'].to_pydatetime())
             g = i+1 if tp.delta_between(start_date, d) == 0 else 1
-            x = p.list()
+            x = p.list(a[i])
             self.assertEqual(x[0], i+1, f'2 week counts do not match {x[0]} {i+1} ')
             self.assertEqual(x[1], g, f'1 week counts do not match {x[1]} {g} ')
 
@@ -298,8 +382,8 @@ class TestNativeProfile(unittest.TestCase):
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
         fc = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE_TIME, format_code='%Y%m%d')
-        fgc2 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, tp, 2, ft.AGGREGATOR_COUNT)
-        fgc1 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, tp, 1, ft.AGGREGATOR_COUNT)
+        fgc2 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 2, ft.AGGREGATOR_COUNT)
+        fgc1 = ft.FeatureGrouper('C', ft.FEATURE_TYPE_FLOAT, fa, fc, None, None, tp, 1, ft.AGGREGATOR_COUNT)
         td = ft.TensorDefinition('Source', [fa, fc, fd])
         with en.EnginePandasNumpy(num_threads=threads) as e:
             df = e.from_csv(td, file, inference=False)
@@ -311,7 +395,7 @@ class TestNativeProfile(unittest.TestCase):
             p.contribute(a[i])
             d = tp.start_period(df.iloc[i]['Date'].to_pydatetime())
             g = i+1 if tp.delta_between(start_date, d) == 0 else 1
-            x = p.list()
+            x = p.list(a[i])
             self.assertEqual(x[0], i+1, f'2 month counts do not match {x[0]} {i+1} ')
             self.assertEqual(x[1], g, f'1 month counts do not match {x[1]} {g} ')
 

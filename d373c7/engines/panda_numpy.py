@@ -344,6 +344,8 @@ class EnginePandasNumpy(EngineContext):
             )
             built_features = built_features + ready_to_build
             td = TensorDefinition(f'Built Features', built_features)
+            # Make sure df is in the correct layout.
+            df = self.reshape(td, df)
             need_to_build = [f for f in need_to_build if f not in built_features]
             i = i+1
 
@@ -700,7 +702,7 @@ class _FeatureProcessor:
             if feature.default is not None:
                 if feature.type == FEATURE_TYPE_CATEGORICAL:
                     if feature.default not in df[feature.name].cat.categories.values:
-                        df[feature.name].cat.add_categories(feature.default, inplace=True)
+                        df[feature.name] = df[feature.name].cat.add_categories(feature.default)
                 df[feature.name].fillna(feature.default, inplace=True)
         return df
 
@@ -790,7 +792,7 @@ class _FeatureProcessor:
             # So we must add 0 to the categories if it does not exist and then 'fill-na'.
             if df[feature.base_feature.name].dtype.name == 'category':
                 if 0 not in df[feature.base_feature.name].cat.categories:
-                    df[feature.base_feature.name].cat.add_categories([0], inplace=True)
+                    df[feature.base_feature.name] = df[feature.base_feature.name].cat.add_categories([0])
             df[feature.name] = df[feature.base_feature.name].map(feature.dictionary).fillna(0).astype(t)
         return df
 
@@ -875,7 +877,7 @@ class _FeatureProcessor:
         p = ProfileNative(group_features, time_feature, df_td)
         for i in range(len(dts)):
             p.contribute(dts[i])
-            out[i, :] = p.list()
+            out[i, :] = p.list(dts[i])
         ags = pd.DataFrame(out, index=rows.index, columns=[f.name for f in group_features])
         return pd.concat([rows, ags], axis=1)
 
@@ -941,4 +943,3 @@ class _FeatureProcessor:
         for fn in functions.values():
             df = fn(df=df)
         return df
-

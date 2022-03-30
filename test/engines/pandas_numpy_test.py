@@ -95,7 +95,7 @@ class TestCategorical(unittest.TestCase):
 
 
 class TestOneHot(unittest.TestCase):
-    """"Derived Features. One Hot feature tests. We'll use the from_df function for this
+    """ Derived Features. One Hot feature tests. We'll use the from_df function for this
     """
     def test_read_base_non_inference(self):
         fc = ft.FeatureSource('MCC', ft.FEATURE_TYPE_CATEGORICAL, default='0000')
@@ -176,7 +176,7 @@ class TestOneHot(unittest.TestCase):
 
 
 class TestNormalizeScale(unittest.TestCase):
-    """"Derived Features. Normalize Scale feature tests. We'll use the from_df function for this
+    """ Derived Features. Normalize Scale feature tests. We'll use the from_df function for this
     """
     def test_read_base_non_inference(self):
         fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
@@ -218,7 +218,7 @@ class TestNormalizeScale(unittest.TestCase):
 
 
 class TestNormalizeStandard(unittest.TestCase):
-    """"Derived Features. Normalize Standard feature tests. We'll use the from_df function for this
+    """ Derived Features. Normalize Standard feature tests. We'll use the from_df function for this
     """
     def test_read_base_non_inference(self):
         fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
@@ -593,10 +593,10 @@ class TestSeriesStacked(unittest.TestCase):
         # Iterate over the card-id's
         for c in df['Card'].unique():
             # Filter by card, sort by date and add the time delta
-            f = df[df['Card'] == c]
-            f.sort_values(by=['Date'], inplace=True)
-            f['Delta'] = f['Date'].diff() / np.timedelta64(1, 'D')
-            f['Delta'] = f['Delta'].fillna(0).abs()
+            f = df.loc[df['Card'] == c]
+            f = f.sort_values(by=['Date'])
+            f['Delta'] = f.loc[:, ['Date']].diff() / np.timedelta64(1, 'D')
+            f['Delta'] = f.loc[:, ['Delta']].fillna(0).abs()
             for i, (index, row) in enumerate(f.iterrows()):
                 # This will be a (1 x series x features) shape numpy, one single row of the series we created
                 n = s[index].lists[0]
@@ -614,7 +614,7 @@ class TestGrouperFeature(unittest.TestCase):
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         fg = ft.FeatureGrouper(
-            '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
+            '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
         td2 = ft.TensorDefinition('Derived', [fd, fr, fa, ff, fg])
         with en.EnginePandasNumpy() as e:
             # No time feature is bad
@@ -632,7 +632,7 @@ class TestGrouperFeature(unittest.TestCase):
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         td1 = ft.TensorDefinition('Source', [fd, fr, fa, ff])
         fg = ft.FeatureGrouper(
-            '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, ff, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
+            '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, ff, fr, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
         td2 = ft.TensorDefinition('Derived', [fd, fr, fa, ff, fg])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
@@ -657,7 +657,7 @@ class TestGrouperFeature(unittest.TestCase):
             ('2_day_std', ft.AGGREGATOR_STDDEV, lambda x: 0 if len(x) == 1 else stdev(x))
         ]
         group_features = [
-            ft.FeatureGrouper(name, ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, time_window, agg)
+            ft.FeatureGrouper(name, ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, time_window, agg)
             for name, agg, _ in feature_def
         ]
         features: List[ft.Feature] = [
@@ -709,10 +709,10 @@ class TestGrouperFeature(unittest.TestCase):
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
         fg_1 = ft.FeatureGrouper(
-            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
+            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
         )
         fg_2 = ft.FeatureGrouper(
-            'country_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
+            'country_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
         )
         td2 = ft.TensorDefinition('Derived', [fg_1])
         td3 = ft.TensorDefinition('Derived', [fg_2])
@@ -735,22 +735,19 @@ class TestGrouperFeature(unittest.TestCase):
         f_not_one = ft.FeatureFilter('Not_Fraud', ft.FEATURE_TYPE_BOOL, fn_not_one, [fl])
         f_is_one = ft.FeatureFilter('Is_Fraud', ft.FEATURE_TYPE_BOOL, fn_one, [fl])
         fg_not_one = ft.FeatureGrouper(
-            'card_not_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, f_not_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
+            'card_not_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, f_not_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
         )
         fg_is_one = ft.FeatureGrouper(
-            'card_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, f_is_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
+            'card_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, f_is_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
         )
         fg_no_filter = ft.FeatureGrouper(
-            'card_no_filter', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
+            'card_no_filter', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
         )
         td = ft.TensorDefinition('Derived', [fd, fr, fc, fa, f_not_one, f_is_one, fg_not_one, fg_is_one, fg_no_filter])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td, file, inference=False, time_feature=fd)
-        # We are using a 1 day window so the filtered records on (fraud == 1) added to (fraud == 2)
+        # We are using a 1-day window so the filtered records on (fraud == 1) added to (fraud == 2)
         # should be the same a no filter
-        with pd.option_context('display.max_rows', None, 'display.max_columns',
-                               None):  # more options can be specified also
-            print(df)
         self.assertTrue((df['card_no_filter'].equals(df['card_not_one'] + df['card_one'])))
 
 
@@ -813,7 +810,7 @@ class TestBuildEmbedded(unittest.TestCase):
         frd = 'Fraud'
         mcc = 'MCC'
         mcc_oh = 'MCC_OH'
-        frd_label = 'Fraud'
+        frd_label = 'Fraud_lbl'
         amount_bin = 'amount_bin'
         bins = 30
         file = FILES_DIR + 'engine_test_base_comma.csv'
@@ -832,6 +829,11 @@ class TestBuildEmbedded(unittest.TestCase):
             mcc_v = df_i[mcc].dropna().unique()
             mcc_c = [f'{mcc}__{c}'for c in mcc_v.tolist()]
             amt_b = [f'{amount_bin}__{i}' for i in range(bins)]
+
+        with pd.option_context('display.max_rows', None, 'display.max_columns',
+                               None):  # more options can be specified also
+            print(df_e)
+
         self.assertEqual(len(df_i), len(df_e), f'Weird, lengths not equal {len(df_i)}, {len(df_e)}')
         self.assertEqual(len(df_e.columns), bins + 1 + len(mcc_v), f'Expected only {bins + 1 + len(mcc_v)} feature')
         self.assertIn(frd_label, df_e.columns, f'Expected {frd_label} to be in the list of columns')
