@@ -855,7 +855,6 @@ class _FeatureProcessor:
             key_function = partial(
                 _FeatureProcessor._process_grouper_key,
                 group_features=gf,
-                df_td=df_td,
                 time_feature=time_feature)
 
             with mp.Pool(num_threads) as p:
@@ -869,15 +868,20 @@ class _FeatureProcessor:
     @staticmethod
     def _process_grouper_key(rows: pd.DataFrame,
                              group_features: List[FeatureGrouper],
-                             df_td: TensorDefinition,
                              time_feature: Feature) -> pd.DataFrame:
         rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
-        dts = rows.to_numpy()
-        out = np.zeros((len(dts), len(group_features)))
-        p = ProfileNative(group_features, time_feature, df_td)
-        for i in range(len(dts)):
-            p.contribute(dts[i])
-            out[i, :] = p.list(dts[i])
+        out = np.zeros((len(rows), len(group_features)))
+        p = ProfileNative(group_features)
+        base_names = [f.name for f in p.base_features]
+        filter_names = [f.name for f in p.filter_features]
+        dimension_names = [f.name for f in p.dimension_features]
+        for i, (a, t, f, d) in enumerate(zip(rows[base_names].to_numpy(),
+                                             rows[time_feature.name],
+                                             rows[filter_names].to_numpy(),
+                                             rows[dimension_names].to_numpy())):
+            c = (a.tolist(), t, [] if len(f) == 0 else f.tolist(), [] if len(d) == 0 else d.tolist())
+            p.contribute(c)
+            out[i, :] = p.list(c)
         ags = pd.DataFrame(out, index=rows.index, columns=[f.name for f in group_features])
         return pd.concat([rows, ags], axis=1)
 
