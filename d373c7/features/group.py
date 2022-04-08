@@ -6,6 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import timedelta, datetime
 from dataclasses import dataclass, field
+from functools import total_ordering
 
 from .common import LearningCategory
 from ..common import enforce_types
@@ -18,13 +19,30 @@ logger = logging.getLogger(__name__)
 
 
 @enforce_types
-@dataclass(frozen=True)
+@total_ordering
+@dataclass(frozen=True, eq=False)
 class TimePeriod(ABC):
     key: int = field(repr=False)
-    name: str
-    pandas_window: str = field(repr=False)
-    numpy_window: str = field(repr=False)
-    datetime_window: str = field(repr=False)
+    name: str = field(compare=False)
+    pandas_window: str = field(repr=False, compare=False)
+    numpy_window: str = field(repr=False, compare=False)
+    datetime_window: str = field(repr=False, compare=False)
+
+    def __eq__(self, other):
+        if isinstance(other, TimePeriod):
+            return self.key == other.key
+        else:
+            raise TypeError(
+                f'Can not check equality of TimePeriod object and non-TimePeriod object Got a {type(other)}'
+            )
+
+    def __lt__(self, other):
+        if isinstance(other, TimePeriod):
+            return self.key < other.key
+        else:
+            raise TypeError(
+                f'Can not do < of TimePeriod object and non-TimePeriod object Got a {type(other)}'
+            )
 
     def time_delta(self, number_of_periods: int):
         kw = {self.datetime_window: number_of_periods}
@@ -101,7 +119,7 @@ AGGREGATOR_STDDEV = Aggregator(5, 'Standard Deviation', 'std')
 
 
 @enforce_types
-@dataclass(unsafe_hash=True)
+@dataclass(unsafe_hash=True, order=True)
 class FeatureGrouper(FeatureWithBaseFeature):
     group_feature: Feature
     dimension_feature: Optional[Feature] = field(compare=False)

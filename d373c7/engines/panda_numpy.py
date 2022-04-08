@@ -264,8 +264,7 @@ class EnginePandasNumpy(EngineContext):
         self._val_features_defined_as_columns(df, target_tensor_def.embedded_features)
         # Start processing Use the FeatureProcessor class.
         df = _FeatureProcessor.process(
-            df, df_tensor_def, target_tensor_def.features, inference, self.one_hot_prefix, self.num_threads,
-            time_feature
+            df, target_tensor_def.features, inference, self.one_hot_prefix, self.num_threads, time_feature
         )
         # Only return base features in the target_tensor_definition. No need to return the embedded features.
         # Remember that expander features can contain multiple columns.
@@ -340,7 +339,7 @@ class EnginePandasNumpy(EngineContext):
             ready_to_build = list(set(ready_to_build))
             # Start processing Use the FeatureProcessor class.
             df = _FeatureProcessor.process(
-                df, td, ready_to_build, inference, self.one_hot_prefix, self.num_threads, time_feature
+                df, ready_to_build, inference, self.one_hot_prefix, self.num_threads, time_feature
             )
             built_features = built_features + ready_to_build
             td = TensorDefinition(f'Built Features', built_features)
@@ -549,37 +548,55 @@ class EnginePandasNumpy(EngineContext):
         return series
 
     @staticmethod
-    def _process_key_frequencies(rows: pd.DataFrame, time_field: Feature,
-                                 time_dict: Dict[int, Dict[Tuple[Feature, int], List[FeatureGrouper]]]
-                                 ) -> np.array:
+    def _process_key_frequencies(rows: pd.DataFrame, time_feature: Feature,
+                                 time_dict: Dict[Tuple[TimePeriod, int], List[FeatureGrouper]],
+                                 ) -> Tuple[pd.Index, List[np.ndarray]]:
 
+        # Keep the original index, we need that to restore the order.
+        row_index = rows.index
         # First sort rows on time_field. We want to go up in time as we process.
-        rows.sort_values(by=[time_field.name], ascending=True, inplace=True)
-        # Keep the original index. We'll need it to restore de order of the input data. (Might not be ordered by time)
-        indexes = rows.index
-        dts = rows[time_field.name].to_numpy()
-        # Make output structure. We have 1 np array per time_window length.
+        rows.sort_values(by=[time_feature.name], ascending=True, inplace=True)
+        # Make output structure. We have 1 np array per time_window/time_period.
         # The shape will be (length of rows, the time window length, number of features for the window length).
-        out = [np.zeros((rows.shape[0], tw,  sum([len(it) for it in fts.items()]))) for tw, fts in time_dict.items()]
+        out = [np.zeros((rows.shape[0], tw,  len(fts))) for (_, tw), fts in time_dict.items()]
+        prev_datetime = rows.iloc[0][time_feature.name]
 
-        for i, (time_window, time_period_dict) in enumerate(time_dict.items()):
-            for j in range(len(dts)):
-                # Make sure not to group beyond the current row.
-                df = rows.iloc[0:j+1]
-                for (base_feature, time_period), grouper_features in time_period_dict.items():
-                    # No need to group stuff that is way in the past.
-                    df = df[df[time_field.name] >= (dts[j] - np.timedelta64(time_window, time_period.numpy_window))]
-                    df = df[[time_field.name, base_feature.name]].groupby(
-                        pd.Grouper(key=time_field.name, freq='1' + time_period.pandas_window)
-                    )
-                    for f in grouper_features:
-                        agg_fn = getattr(df, f.aggregator.panda_agg_func)
-                        n = agg_fn().fillna(0).to_numpy()
-                        # Copy to right most position. Note that we may not have the full window length.
-                        out[i][j, max(0, time_window-n.shape[0]):time_window, 0] \
-                            = n[max(0, n.shape[0]-time_window):n.shape[0], 0]
+        p = ProfileNative([f for _, fts in time_dict.items() for f in fts])
 
-        return out
+        # The profile will return a flat list of all aggregators across time-periods/windows.
+        # But we will need to create a numpy array per unique time-period/window.
+        # The indexes will keep track of which output of the profile goes to which numpy array
+        indexes = [0] + [len(fts) for (_, _), fts in time_dict.items()]
+        for i in range(1, len(indexes)):
+            indexes[i] = indexes[i] + indexes[i-1]
+
+        base_names = [f.name for f in p.base_features]
+        filter_names = [f.name for f in p.filter_features]
+        dimension_names = [f.name for f in p.dimension_features]
+
+        for i, (a, t, f, d) in enumerate(zip(rows[base_names].to_numpy(),
+                                             rows[time_feature.name],
+                                             rows[filter_names].to_numpy(),
+                                             rows[dimension_names].to_numpy())):
+            if i > 0:
+                # Always start where the previous row stopped.
+                for e in out:
+                    e[i] = e[i-1]
+            c = (a.tolist(), t, [] if len(f) == 0 else f.tolist(), [] if len(d) == 0 else d.tolist())
+            p.contribute(c)
+            r = p.list(c)
+            for j, ((tp, _), _) in enumerate(time_dict.items()):
+                # Run Time-logic, see if the last values have to be shifted up.
+                delta = tp.delta_between(prev_datetime, t)
+                if delta > 0:
+                    # take the current row, all features, pad the time dimension with 'delta' zero's.
+                    # Which will make the array bigger in the time dimension so slice the added delta away.
+                    out[j][i, :] = np.pad(out[j][i, :], ((0, delta), (0, 0)), mode='constant')[delta:, :]
+                # Assign the values to last bin
+                out[j][i, -1] = r[indexes[j]:indexes[j+1]]
+            prev_datetime = t
+
+        return row_index, out
 
     def to_series_frequencies(self, target_tensor_def: TensorDefinition, file: str, key_feature: Feature,
                               time_feature: Feature, delimiter: chr = ',', quote: chr = "'",
@@ -587,10 +604,14 @@ class EnginePandasNumpy(EngineContext):
         """
         Method that will turn a Pandas DataFrame into a frequency series. It works on FeatureGrouper features
         It will 'group' the features (for instance per customer), order according to a date-time field and output
-        a set of frequencies
-        The output is the same number of records, but each transaction will be pre-pended with the previous x
-        (depending on the length) transactions.
-        As input, it takes a 2D Tensor and return a 3D tensor per learning category.
+        a set of frequencies in the form of numpy arrays
+        There will be a numpy array of rank-3 per combination of Time Window/Time Period in the list of grouper
+        features. So if you request a 2-day and a 3-day and 2-week FeatureGroupers, then the output will be 3 numpy
+        arrays.
+        Each will have number of rows as first dimension. The second dimension will be the Time-Window. So for above
+        example, the first list would have a second dimension of 2, the second list a second dimension of 3, the third
+        list would have a second dimension of 2. The third dimension will be the number of features with that specific
+        time-window/time-period. So in above case the third dimension will be 1 for each of the 3 numpy arrays.
 
         @param target_tensor_def: (TensorDefinition) Tensor Definition to use for the series creation. The features that
         should be turned into frequencies.
@@ -601,38 +622,21 @@ class EnginePandasNumpy(EngineContext):
         @param delimiter: (str) The delimiter used in the file. Default is ','
         @param quote: (str) Quote character. Default is "'"
         @param inference: (bool) Indicate if we are inferring or not. If True [COMPLETE]
-        @return : NumpyList Object. It will contain one list per Learning Category. The lists will be 3D Tensors.
-        (Batch x Series-length x Number-of-features-for the LC)
+        @return : NumpyList Object. It will contain one list per unique time_window/time_period found in the of the
+        FeatureGroupers. The rank of each numpy array will be 3 (BatchSize x TimeWindow x #Features)
         """
         gf = self._val_grouper_based(target_tensor_def)
         # Group per Group feature. i.e. per key.
-        group_dict = {g: list(gf) for g, gf in groupby(gf, lambda x: x.group_feature)}
-        # Group per same time_window, we can treat those in one go.
-        group_dict: Dict[Feature, Dict[int, List[FeatureGrouper]]] = {
-            g: {k: list(v) for k, v in groupby(
-                gf, lambda x: x.time_window
-            )}
-            for g, gf in group_dict.items()
-        }
-        # Now group per time_period and base_feature with a time-window. And turn into Ordered Dict.
-        # The time_period will drive how 'long' the frequency is. Note how we do not group per time_
-        group_dict: Dict[Feature, Dict[int, Dict[Tuple[Feature, TimePeriod], List[FeatureGrouper]]]] = OrderedDict(
+        group_dict: Dict[Feature, Dict[Tuple[TimePeriod, int], List[FeatureGrouper]]] = OrderedDict(
             sorted([
                 (g, OrderedDict(
                     sorted([
-                        (tw, OrderedDict(
-                            sorted(
-                                [
-                                    (k, list(v)) for k, v in groupby(gf, lambda x: (x.base_feature, x.time_period))
-                                ], key=lambda x:x[0]))
-                         )
-                        for tw, gf in gd.items()
+                        (k, sorted(list(v), key=lambda x:x))
+                        for k, v in groupby(gf, lambda x: (x.time_period, x.time_window))
                     ], key=lambda x: x[0])
-                ))
-                for g, gd in group_dict.items()
+                )) for g, gf in groupby(gf, lambda x: x.group_feature)
             ], key=lambda x: x[0])
         )
-
         # Create an 'unstacked' dataframe of the features. Do this first so it is ready for inference.
         f_features = target_tensor_def.embedded_features
         f_features = FeatureHelper.filter_not_feature(FeatureGrouper, f_features)
@@ -640,21 +644,40 @@ class EnginePandasNumpy(EngineContext):
         td = TensorDefinition('InternalFrequenciesKeyTime', list(set(f_features)))
         df = self.from_csv(td, file, delimiter, quote, inference=inference)
 
+        # Placeholder for the output
+        series_out = None
+
         for g, td in group_dict.items():
             logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
                         f'using {self.num_threads} process(es)')
+
             key_function = partial(
                 self._process_key_frequencies,
-                time_field=time_feature,
+                time_feature=time_feature,
                 time_dict=td
             )
 
+            # This will a List[Tuple[pd.Index,List[np.ndarray]]. There will be an entry in the main list per unique
+            # group value.
+            # The index will return the original index, which we need to restore.
+            # The list within the Tuple will contain a numpy array per each unique TimePeriod/TimeWindow combination
             with mp.Pool(self.num_threads) as p:
-                dfs = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
+                series = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
 
-            df = pd.concat(dfs, axis=0)
-            # Restore Original sort
-            df.sort_index(inplace=True)
+            # Flatten index lists, we will get one long list across all group values.
+            index = [i for ind, _ in series for i in ind]
+            # Complex stuff to make one long numpy across all group values per each unique TimePeriod/TimeWindow combo
+            series = [lst for _, lst in series]
+            series = [np.concatenate([e[i] for e in series], axis=0) for i in range(len(series[0]))]
+            # Getting an array by index effectively sorts it, so this restores the order of the original df
+            series = [a[index] for a in series]
+            if series_out is None:
+                series_out = series
+            else:
+                series_out = series_out + series
+
+        # Turn it into a NumpyList
+        return NumpyList(series_out)
 
 
 class _FeatureProcessor:
@@ -838,7 +861,7 @@ class _FeatureProcessor:
         return df
 
     @staticmethod
-    def _process_grouper_features(df: pd.DataFrame, df_td: TensorDefinition, features: List[FeatureGrouper],
+    def _process_grouper_features(df: pd.DataFrame, features: List[FeatureGrouper],
                                   num_threads: int, time_feature: Feature) -> pd.DataFrame:
         if len(features) == 0:
             return df
@@ -886,13 +909,12 @@ class _FeatureProcessor:
         return pd.concat([rows, ags], axis=1)
 
     @classmethod
-    def process(cls, df: pd.DataFrame, df_td: TensorDefinition, features: List[Feature], inference: bool,
-                one_hot_prefix: str, num_threads: int, time_feature: Optional[Feature]) -> pd.DataFrame:
+    def process(cls, df: pd.DataFrame, features: List[Feature], inference: bool, one_hot_prefix: str,
+                num_threads: int, time_feature: Optional[Feature]) -> pd.DataFrame:
         """class method which will create a DataFrame of derived features. It will apply logic depending on the type of
         feature.
 
         @param df: Pandas Dataframe containing the base features. The raw features as found in for instance a file
-        @param df_td: The tensor definition used to build the df. It knows which fields are in the df.
         @param features: List of Features to create.
         @param inference: Boolean value indicating if we are running in inference or not.
         @param one_hot_prefix: String, the prefix to be used for one-hot-encoded features
@@ -938,7 +960,6 @@ class _FeatureProcessor:
             FeatureGrouper: partial(
                 cls._process_grouper_features,
                 features=FeatureHelper.filter_feature(FeatureGrouper, features),
-                df_td=df_td,
                 num_threads=num_threads,
                 time_feature=time_feature
             )

@@ -830,10 +830,6 @@ class TestBuildEmbedded(unittest.TestCase):
             mcc_c = [f'{mcc}__{c}'for c in mcc_v.tolist()]
             amt_b = [f'{amount_bin}__{i}' for i in range(bins)]
 
-        with pd.option_context('display.max_rows', None, 'display.max_columns',
-                               None):  # more options can be specified also
-            print(df_e)
-
         self.assertEqual(len(df_i), len(df_e), f'Weird, lengths not equal {len(df_i)}, {len(df_e)}')
         self.assertEqual(len(df_e.columns), bins + 1 + len(mcc_v), f'Expected only {bins + 1 + len(mcc_v)} feature')
         self.assertIn(frd_label, df_e.columns, f'Expected {frd_label} to be in the list of columns')
@@ -841,26 +837,26 @@ class TestBuildEmbedded(unittest.TestCase):
         self.assertTrue(set(amt_b).issubset(set(df_e.columns)), f'Did not find columns {amt_b}')
 
 
-# class TestSeriesFrequencies(unittest.TestCase):
-#     def test_create_base(self):
-#         file = FILES_DIR + 'engine_test_base_comma.csv'
-#         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
-#         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
-#         fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
-#         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
-#         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
-#         td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
-#         freq = 3
-#         fg_1 = ft.FeatureGrouper(
-#             'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_SUM
-#         )
-#         fg_2 = ft.FeatureGrouper(
-#             'card_2d_avg', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_AVG
-#         )
-#         td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
-#         with en.EnginePandasNumpy() as e:
-#             n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
-#             print('x')
+class TestSeriesFrequencies(unittest.TestCase):
+    def test_create_base(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
+        freq = 3
+        fg_1 = ft.FeatureGrouper(
+            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_SUM
+        )
+        fg_2 = ft.FeatureGrouper(
+            'card_2d_avg', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_AVG
+        )
+        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+        with en.EnginePandasNumpy() as e:
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            print('x')
 
 
 def main():
