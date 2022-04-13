@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from .common import enforce_types
 from ..features.common import Feature, FeatureCategorical, FeatureDefinitionException
 from ..features.common import FeatureWithBaseFeature, LearningCategory, LEARNING_CATEGORY_NONE
-from ..features.common import FeatureHelper, FeatureTypeTimeBased
+from ..features.common import FeatureHelper, FeatureTypeTimeBased, FeatureTypeNumerical
 
 logger = logging.getLogger(__name__)
 
@@ -113,3 +113,39 @@ class FeatureBin(FeatureWithBaseFeature, FeatureCategorical):
     @property
     def inference_ready(self) -> bool:
         return self.bins is not None
+
+
+@enforce_types
+@dataclass(unsafe_hash=True)
+class FeatureRatio(FeatureWithBaseFeature):
+    """
+    Feature to calculate a ratio between 2 numbers. It will take the first input number and divide it by the second.
+    It will avoid division by 0. If 0 is the denominator, the result will be 0 and not an error.
+    """
+    denominator_feature: Feature
+
+    def __post_init__(self):
+        self.val_float_type()
+        self.val_base_feature_is_numerical()
+        self._val_denominator_is_numerical()
+        # Add base and denominator to the embedded features list
+        self.embedded_features = self.get_base_and_base_embedded_features()
+        self.embedded_features.append(self.denominator_feature)
+        self.embedded_features.extend(self.denominator_feature.embedded_features)
+
+    @property
+    def learning_category(self) -> LearningCategory:
+        # Should be the learning category of the type of the source feature
+        return self.type.learning_category
+
+    @property
+    def inference_ready(self) -> bool:
+        # A ratio feature has no inference attributes
+        return True
+
+    def _val_denominator_is_numerical(self):
+        if not FeatureHelper.is_feature_of_type(self.denominator_feature, FeatureTypeNumerical):
+            raise FeatureDefinitionException(
+                f'The denominator feature {self.denominator_feature.name} of a FeatureRatio should be numerical. ' +
+                f'Got {self.denominator_feature.type} '
+            )

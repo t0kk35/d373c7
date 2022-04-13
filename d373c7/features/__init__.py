@@ -13,7 +13,7 @@ from ..features.common import LEARNING_CATEGORY_BINARY, LEARNING_CATEGORY_CATEGO
 from ..features.common import LEARNING_CATEGORY_NONE, LEARNING_CATEGORY_LABEL, LEARNING_CATEGORIES_MODEL
 from ..features.common import LEARNING_CATEGORIES_MODEL_INPUT
 from ..features.common import FeatureDefinitionException, FeatureCategorical, Feature, FeatureHelper
-from ..features.base import FeatureSource, FeatureVirtual, FeatureIndex, FeatureBin
+from ..features.base import FeatureSource, FeatureVirtual, FeatureIndex, FeatureBin, FeatureRatio
 from ..features.expanders import FeatureOneHot
 from ..features.labels import FeatureLabelBinary
 from ..features.normalizers import FeatureNormalizeScale, FeatureNormalizeStandard

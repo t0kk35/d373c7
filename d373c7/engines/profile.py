@@ -169,7 +169,9 @@ class ProfileNative(Profile[Tuple[List[float], dt.datetime, List[int], List[str]
         # all the aggregates for the max time window
         uniq_f: Dict[Tuple[Feature, Feature, FeatureFilter, TimePeriod], List[FeatureGrouper]] = {
             k: list(v) for k, v in
-            groupby(features, lambda x: (x.base_feature, x.dimension_feature, x.filter_feature, x.time_period))
+            groupby(
+                sorted(features, key=lambda x: x),
+                lambda x: (x.base_feature, x.dimension_feature, x.filter_feature, x.time_period))
         }
         self._profile_fields: \
             List[ProfileField[Tuple[List[float], dt.datetime, List[int], List[str]], List[float]]] = []
@@ -182,8 +184,7 @@ class ProfileNative(Profile[Tuple[List[float], dt.datetime, List[int], List[str]
                 pf = ProfileFieldNativeDict(tp, tw, bf, self.base_features, ff, self.filter_features,
                                             df, self.dimension_features)
             self._profile_fields.append(pf)
-            for f in v:
-                self._features_to_field[f] = pf
+            self._features_to_field.update({f: pf for f in v})
 
     @property
     def profile_fields(self) -> List[ProfileField[Tuple[List[float], dt.datetime, List[int], List[str]], List[float]]]:

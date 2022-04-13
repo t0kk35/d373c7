@@ -19,7 +19,7 @@ from .numpy_helper import NumpyList
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL
 from ..features.common import FeatureTypeInteger, FeatureHelper
 from ..features.common import LearningCategory, LEARNING_CATEGORIES_MODEL_INPUT, LEARNING_CATEGORY_LABEL
-from ..features.base import FeatureSource, FeatureIndex, FeatureBin
+from ..features.base import FeatureSource, FeatureIndex, FeatureBin, FeatureRatio
 from ..features.tensor import TensorDefinition, TensorDefinitionMulti
 from ..features.expanders import FeatureExpander, FeatureOneHot
 from ..features.normalizers import FeatureNormalize, FeatureNormalizeScale, FeatureNormalizeStandard
@@ -167,14 +167,14 @@ class EnginePandasNumpy(EngineContext):
 
     @staticmethod
     def _val_time_feature_needed(target_tensor_def: TensorDefinition, time_feature: Feature):
-        if FeatureGrouper in [f.__class__ for f in target_tensor_def.features]:
+        if len(FeatureHelper.filter_feature(FeatureGrouper, target_tensor_def.embedded_features)) > 0:
             if time_feature is None:
                 raise EnginePandaNumpyException(
                     f'There is a FeatureGrouper in the Tensor Definition to create. They need a time field to ' +
                     f' process. Please provide the parameter ''time_feature''.'
                 )
             else:
-                if not isinstance(time_feature.type, FeatureTypeTimeBased):
+                if not FeatureHelper.is_feature_of_type(time_feature, FeatureTypeTimeBased):
                     raise EnginePandaNumpyException(
                         f'The time feature used to build a series must be date based. It is of type {time_feature.type}'
                     )
@@ -299,6 +299,10 @@ class EnginePandasNumpy(EngineContext):
             raise EnginePandaNumpyException(f' path {file} does not exist or is not a file')
         logger.info(f'Building Panda for : {target_tensor_def.name} from file {file}')
         need_to_build = target_tensor_def.embedded_features
+        # Make sure to also build the time feature and stuff it needs
+        if time_feature is not None and time_feature not in need_to_build:
+            need_to_build.append(time_feature)
+            need_to_build.extend(time_feature.embedded_features)
         source_features = FeatureHelper.filter_feature(FeatureSource, need_to_build)
         source_feature_names = [field.name for field in source_features]
         source_feature_types = {
@@ -861,6 +865,16 @@ class _FeatureProcessor:
         return df
 
     @staticmethod
+    def _process_ratio_features(df: pd.DataFrame, features: List[FeatureRatio]) -> pd.DataFrame:
+        # Add Ratio features. Simple division with some logic to avoid errors and 0 division. Note that pandas return
+        # inf if the denominator is 0, and nan if both the numerator and the denominator are 0.
+        for feature in features:
+            t = np.dtype(EnginePandasNumpy.panda_type(feature))
+            df[feature.name] = df[feature.base_feature.name].div(df[feature.denominator_feature.name]).\
+                replace([np.inf, np.nan], 0).astype(t)
+        return df
+
+    @staticmethod
     def _process_grouper_features(df: pd.DataFrame, features: List[FeatureGrouper],
                                   num_threads: int, time_feature: Feature) -> pd.DataFrame:
         if len(features) == 0:
@@ -956,6 +970,10 @@ class _FeatureProcessor:
             FeatureExpression: partial(
                 cls._process_expr_features,
                 features=FeatureHelper.filter_feature(FeatureExpression, features)
+            ),
+            FeatureRatio: partial(
+                cls._process_ratio_features,
+                features=FeatureHelper.filter_feature(FeatureRatio, features)
             ),
             FeatureGrouper: partial(
                 cls._process_grouper_features,

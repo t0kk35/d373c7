@@ -73,6 +73,8 @@ class TestReading(unittest.TestCase):
             for (f, _), c in zip(TestReading.features, df.columns):
                 self.assertEqual(f.name, c, f'Incorrect column name in read test all got {c}, expected {f.name}')
 
+    # TODO need test with multiple source features that are dates. There was an iterator problem?
+
 
 class TestCategorical(unittest.TestCase):
     """Tests for categorical source feature
@@ -396,6 +398,10 @@ def test_expr(x: float) -> float:
     return x + 1
 
 
+def zero_expr(x: float) -> float:
+    return 0.0
+
+
 def test_date_expr(x: int) -> pd.Timestamp:
     y = pd.to_datetime(x)
     y = y + timedelta(days=1)
@@ -440,6 +446,32 @@ class TestFeatureExpression(unittest.TestCase):
             df2 = e.from_csv(td2, file, inference=False)
             df1['Date'] = df1['Date'] + timedelta(days=1)
             self.assertTrue(df1['Date'].equals(df2['Add1ToDate']), f'Dates should have been equal')
+
+
+class TestFeatureRatio(unittest.TestCase):
+    def test_base_ratio(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
+        ratio_name = 'ratio'
+        fd = ft.FeatureExpression('AddAmount', ft.FEATURE_TYPE_FLOAT, test_expr, [fa])
+        fr = ft.FeatureRatio(ratio_name, ft.FEATURE_TYPE_FLOAT, fa, fd)
+        with en.EnginePandasNumpy() as e:
+            td = ft.TensorDefinition('All', [fa, fd, fr])
+            df = e.from_csv(td, file, inference=False)
+            df['ratio-2'] = df[fa.name].div(df[fd.name])
+            self.assertTrue(df[fr.name].equals(df['ratio-2']), f'Ratios not equal')
+
+    def test_zero_denominator(self):
+        # Test if the zero division return 0 instead of an error or np.inf
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT)
+        ratio_name = 'ratio'
+        fd = ft.FeatureExpression('ZeroAmount', ft.FEATURE_TYPE_FLOAT, zero_expr, [fa])
+        fr = ft.FeatureRatio(ratio_name, ft.FEATURE_TYPE_FLOAT, fa, fd)
+        with en.EnginePandasNumpy() as e:
+            td = ft.TensorDefinition('All', [fa, fd, fr])
+            df = e.from_csv(td, file, inference=False)
+            self.assertTrue((df[fr.name] == 0.0).all(), f'Ratios not all zero')
 
 
 class TestReshape(unittest.TestCase):
@@ -610,16 +642,21 @@ class TestGrouperFeature(unittest.TestCase):
     def test_grouped_bad_no_time_feature(self):
         file = FILES_DIR + 'engine_test_base_comma.csv'
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fx = ft.FeatureExpression('DateDerived', ft.FEATURE_TYPE_DATE, fn_one, [fd])
         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         fg = ft.FeatureGrouper(
             '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
         td2 = ft.TensorDefinition('Derived', [fd, fr, fa, ff, fg])
+        tdx = ft.TensorDefinition('Derived', [fx, fr, fa, ff, fg])
         with en.EnginePandasNumpy() as e:
             # No time feature is bad
             with self.assertRaises(en.EnginePandaNumpyException):
                 _ = e.from_csv(td2, file, inference=False)
+            # No time feature is bad. if it is derived also; i.e. embedded.
+            with self.assertRaises(en.EnginePandaNumpyException):
+                _ = e.from_csv(tdx, file, inference=False)
             # Time Feature not of datetime type is also bad
             with self.assertRaises(en.EnginePandaNumpyException):
                 _ = e.from_csv(td2, file, time_feature=fa, inference=False)
@@ -845,7 +882,6 @@ class TestSeriesFrequencies(unittest.TestCase):
         fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
-        td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
         freq = 3
         fg_1 = ft.FeatureGrouper(
             'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_SUM

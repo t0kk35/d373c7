@@ -114,7 +114,6 @@ class FeatureFilter(FeatureExpression):
             self.embedded_features.extend(pf.embedded_features)
         self.embedded_features = list(set(self.embedded_features))
 
-#TODO class FeatureFilterGroup
 
 @enforce_types
 @dataclass(unsafe_hash=True)
