@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from .common import enforce_types
 from ..features.common import Feature, FeatureCategorical, FeatureDefinitionException
 from ..features.common import FeatureWithBaseFeature, LearningCategory, LEARNING_CATEGORY_NONE
-from ..features.common import FeatureHelper, FeatureTypeTimeBased, FeatureTypeNumerical
+from ..features.common import FeatureHelper, FeatureTypeTimeBased, FeatureTypeNumerical, FeatureTypeString
 
 logger = logging.getLogger(__name__)
 
@@ -148,4 +148,39 @@ class FeatureRatio(FeatureWithBaseFeature):
             raise FeatureDefinitionException(
                 f'The denominator feature {self.denominator_feature.name} of a FeatureRatio should be numerical. ' +
                 f'Got {self.denominator_feature.type} '
+            )
+
+
+@enforce_types
+@dataclass(unsafe_hash=True)
+class FeatureConcat(FeatureWithBaseFeature):
+    """
+    Feature to concatenate 2 features. Both feature must be string type, the result will be a string
+    """
+    concat_feature: Feature
+
+    def __post_init__(self):
+        self.val_string_type()
+        self.val_base_feature_is_string()
+        self._val_concat_feature_is_string()
+        # Add base and concat to the embedded features list
+        self.embedded_features = self.get_base_and_base_embedded_features()
+        self.embedded_features.append(self.concat_feature)
+        self.embedded_features.extend(self.concat_feature.embedded_features)
+
+    @property
+    def learning_category(self) -> LearningCategory:
+        # Should be the learning category of the type of the source feature
+        return self.type.learning_category
+
+    @property
+    def inference_ready(self) -> bool:
+        # A concat feature has no inference attributes
+        return True
+
+    def _val_concat_feature_is_string(self):
+        if not FeatureHelper.is_feature_of_type(self.concat_feature, FeatureTypeString):
+            raise FeatureDefinitionException(
+                f'The concat feature {self.concat_feature.name} of a FeatureRatio should be a string. ' +
+                f'Got {self.concat_feature.type} '
             )

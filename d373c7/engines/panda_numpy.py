@@ -19,10 +19,11 @@ from .numpy_helper import NumpyList
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL
 from ..features.common import FeatureTypeInteger, FeatureHelper
 from ..features.common import LearningCategory, LEARNING_CATEGORIES_MODEL_INPUT, LEARNING_CATEGORY_LABEL
-from ..features.base import FeatureSource, FeatureIndex, FeatureBin, FeatureRatio
+from ..features.base import FeatureSource, FeatureIndex, FeatureBin, FeatureRatio, FeatureConcat
 from ..features.tensor import TensorDefinition, TensorDefinitionMulti
 from ..features.expanders import FeatureExpander, FeatureOneHot
 from ..features.normalizers import FeatureNormalize, FeatureNormalizeScale, FeatureNormalizeStandard
+from ..features.normalizers import FeatureNormalizeLogBase
 from ..features.expressions import FeatureExpression, FeatureExpressionSeries
 from ..features.labels import FeatureLabel, FeatureLabelBinary
 from ..features.group import FeatureGrouper, TimePeriod
@@ -181,13 +182,31 @@ class EnginePandasNumpy(EngineContext):
 
     @staticmethod
     def _val_grouper_based(target_tensor_def: TensorDefinition) -> List[FeatureGrouper]:
-        ng = FeatureHelper.filter_not_feature(FeatureGrouper, target_tensor_def.features)
-        if len(ng) > 0:
-            raise EnginePandaNumpyException(
-                f'The target_tensor_def to this function should only contain FeatureGrouper based features ' +
-                f'Incorrect features {[f.name for f in ng]}'
-            )
-        return list(set(FeatureHelper.filter_feature(FeatureGrouper, target_tensor_def.features)))
+        """
+        Function that will validate that the target tensor definition contains only FeatureGroupers or Normaliser
+        features with a FeatureGrouper as base feature.
+        @param target_tensor_def: The tensor definition to check
+        @return: A list of FeatureGroupers. Either found in the target_tensor_def or as base_feature
+        of a FeatureNormalizer in the target_tensor_def
+        """
+        out: List[FeatureGrouper] = []
+        for f in target_tensor_def.features:
+            fg = FeatureHelper.filter_feature(FeatureGrouper, [f])
+            if not len(fg) > 0:
+                fn = FeatureHelper.filter_feature(FeatureNormalize, [f])
+                if len(fn) > 0:
+                    fge = FeatureHelper.filter_feature(FeatureGrouper, [fn[0].base_feature])
+                    if not len(fge) > 0:
+                        raise EnginePandaNumpyException(
+                            f'The Target Tensor Definition should only contain FeatureGrouper features and ' +
+                            f'FeatureNormalize with a FeatureGrouper as base_feature. Got {f.name} of type {type(f)}'
+                        )
+                    else:
+                        out.append(fge[0])
+            else:
+                out.append(fg[0])
+
+        return list(set(out))
 
     @property
     def num_threads(self):
@@ -723,6 +742,22 @@ class _FeatureProcessor:
             raise EnginePandaNumpyException(f'Binary Feature <{feature.name}> should only contain values 0 and 1 ')
 
     @staticmethod
+    def _get_log_fn(f: FeatureNormalizeLogBase) -> Optional[Callable]:
+        if f.log_base is None:
+            return None
+        if f.log_base == 'e':
+            return np.log
+        elif f.log_base == '10':
+            return np.log10
+        elif f.log_base == '2':
+            return np.log2
+        else:
+            raise EnginePandaNumpyException(
+                f'Problem processing Normalizer feature {f.name}. ' +
+                f'Did not find function to calculated log-base {f.log_base}'
+            )
+
+    @staticmethod
     def _process_source_feature(df: pd.DataFrame, features: List[FeatureSource]) -> pd.DataFrame:
         # Apply defaults for source data fields of type 'CATEGORICAL'
         for feature in features:
@@ -736,28 +771,40 @@ class _FeatureProcessor:
     @staticmethod
     def _process_normalize_feature(df: pd.DataFrame, features: List[FeatureNormalize], inference: bool) -> pd.DataFrame:
         # First Create a dictionary with mappings of fields to expressions. Run all at once at the end.
+        if len(features) == 0:
+            return df
+
+        kwargs = {}
         for feature in features:
             fn = feature.name
             bfn = feature.base_feature.name
-            kwargs = {}
-            if FeatureHelper.is_feature(feature, FeatureNormalizeScale):
+            if isinstance(feature, FeatureNormalizeScale):
+                log_fn = _FeatureProcessor._get_log_fn(feature)
                 if not inference:
-                    feature.minimum = df[bfn].min()
-                    feature.maximum = df[bfn].max()
+                    feature.minimum = df[bfn].min() if log_fn is None else log_fn(df[bfn].min())
+                    feature.maximum = df[bfn].max() if log_fn is None else log_fn(df[bfn].max())
                 logger.info(f'Create {fn} Normalize/Scale {bfn}. Min. {feature.minimum:.2f} Max. {feature.maximum:.2f}')
-                kwargs[fn] = (df[bfn] - feature.minimum) / (feature.maximum - feature.minimum)
-            elif FeatureHelper.is_feature(feature, FeatureNormalizeStandard):
+                if log_fn is None:
+                    kwargs[fn] = (df[bfn] - feature.minimum) / (feature.maximum - feature.minimum)
+                else:
+                    kwargs[fn] = (log_fn(df[bfn]) - feature.minimum) / (feature.maximum - feature.minimum)
+            elif isinstance(feature, FeatureNormalizeStandard):
+                log_fn = _FeatureProcessor._get_log_fn(feature)
                 if not inference:
-                    feature.mean = df[bfn].mean()
-                    feature.stddev = df[bfn].std()
+                    feature.mean = df[bfn].mean() if log_fn is None else log_fn(df[bfn]).mean()
+                    feature.stddev = df[bfn].std() if log_fn is None else log_fn(df[bfn]).std()
                 logger.info(f'Create {fn} Normalize/Standard {bfn}. Mean {feature.mean:.2f} Std {feature.stddev:.2f}')
-                kwargs[fn] = (df[bfn] - feature.mean) / feature.stddev
+                if log_fn is None:
+                    kwargs[fn] = (df[bfn] - feature.mean) / feature.stddev
+                else:
+                    kwargs[fn] = (log_fn(df[bfn]) - feature.mean) / feature.stddev
             else:
                 raise EnginePandaNumpyException(
                     f'Unknown feature normaliser type {feature.__class__.name}')
-            # Update the Panda
-            df = df.assign(**kwargs)
-        # Return the Panda
+
+        # Update the Pandas dataframe. All normalizations are applied at once.
+        df = df.assign(**kwargs)
+        # Return the Pandas dataframe
         return df
 
     @staticmethod
@@ -866,12 +913,31 @@ class _FeatureProcessor:
 
     @staticmethod
     def _process_ratio_features(df: pd.DataFrame, features: List[FeatureRatio]) -> pd.DataFrame:
+        if len(features) == 0:
+            return df
         # Add Ratio features. Simple division with some logic to avoid errors and 0 division. Note that pandas return
         # inf if the denominator is 0, and nan if both the numerator and the denominator are 0.
+        # Do all ratios in one go using assign
+        kwargs = {}
         for feature in features:
             t = np.dtype(EnginePandasNumpy.panda_type(feature))
-            df[feature.name] = df[feature.base_feature.name].div(df[feature.denominator_feature.name]).\
-                replace([np.inf, np.nan], 0).astype(t)
+            bfn = feature.base_feature.name
+            dfn = feature.denominator_feature.name
+            kwargs[feature.name] = df[bfn].div(df[dfn]).replace([np.inf, np.nan], 0).astype(t)
+        # Apply concatenations
+        df = df.assign(**kwargs)
+        return df
+
+    @staticmethod
+    def _process_concat_features(df: pd.DataFrame, features: List[FeatureConcat]):
+        if len(features) == 0:
+            return df
+        # Do all concatenations in one go using assign
+        kwargs = {}
+        for feature in features:
+            kwargs[feature.name] = df[feature.base_feature.name] + df[feature.concat_feature.name]
+        # Apply concatenations
+        df = df.assign(**kwargs)
         return df
 
     @staticmethod
@@ -974,6 +1040,10 @@ class _FeatureProcessor:
             FeatureRatio: partial(
                 cls._process_ratio_features,
                 features=FeatureHelper.filter_feature(FeatureRatio, features)
+            ),
+            FeatureConcat: partial(
+                cls._process_concat_features,
+                features=FeatureHelper.filter_feature(FeatureConcat, features)
             ),
             FeatureGrouper: partial(
                 cls._process_grouper_features,

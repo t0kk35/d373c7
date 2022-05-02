@@ -200,6 +200,28 @@ class TestNormalizeScale(unittest.TestCase):
             self.assertEqual(fs.minimum, mn, f'Minimum not set correctly {fs.maximum}')
             self.assertListEqual(td2.continuous_features(True), [fs], f'Expanded Feature not correct')
 
+    def test_read_w_logs_non_inference(self):
+        # If logs are defined, then the amount should be logged first and then the normalizer applied.
+        fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        s_name = 'AmountScaleAndLog'
+        s_type = ft.FEATURE_TYPE_FLOAT_32
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        for log, log_fn in (('e', np.log), ('2', np.log2), ('10', np.log10)):
+            with en.EnginePandasNumpy() as e:
+                fs = ft.FeatureNormalizeScale(s_name, s_type, fc, log)
+                td = ft.TensorDefinition('All', [fc])
+                df = e.from_csv(td, file, inference=False)
+                mn = log_fn(df['Amount']).min()
+                mx = log_fn(df['Amount']).max()
+                td2 = ft.TensorDefinition('Derived', [fs])
+                df = e.from_df(td2, df, td, inference=False)
+                self.assertEqual(len(df.columns), 1, f'Only one columns should have been returned')
+                self.assertEqual(df.columns[0], s_name, f'Column name is not correct {df.columns[0]}')
+                self.assertEqual(fs.inference_ready, True, f'Feature should now be inference ready')
+                self.assertEqual(fs.maximum, mx, f'Maximum not set correctly {fs.maximum}')
+                self.assertEqual(fs.minimum, mn, f'Minimum not set correctly {fs.maximum}')
+                self.assertListEqual(td2.continuous_features(True), [fs], f'Expanded Feature not correct')
+
     def test_read_base_inference(self):
         fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         s_name = 'AmountScale'
@@ -223,11 +245,11 @@ class TestNormalizeStandard(unittest.TestCase):
     """ Derived Features. Normalize Standard feature tests. We'll use the from_df function for this
     """
     def test_read_base_non_inference(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
         fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
-        s_name = 'AmountScale'
+        s_name = 'AmountScaleAndLog'
         s_type = ft.FEATURE_TYPE_FLOAT_32
         fs = ft.FeatureNormalizeStandard(s_name, s_type, fc)
-        file = FILES_DIR + 'engine_test_base_comma.csv'
         with en.EnginePandasNumpy() as e:
             td_df = ft.TensorDefinition('All', [fc])
             df = e.from_csv(td_df, file, inference=False)
@@ -241,6 +263,28 @@ class TestNormalizeStandard(unittest.TestCase):
             self.assertEqual(fs.mean, mn, f'Mean not set correctly {fs.mean}')
             self.assertEqual(fs.stddev, st, f'Standard Dev not set correctly {fs.stddev}')
             self.assertListEqual(td2.continuous_features(True), [fs], f'Expanded Feature not correct')
+
+    def test_read_w_logs_non_inference(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        # If logs are defined, then the amount should be logged first and then the normalizer applied.
+        fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        s_name = 'AmountScale'
+        s_type = ft.FEATURE_TYPE_FLOAT_32
+        for log, log_fn in (('e', np.log), ('2', np.log2), ('10', np.log10)):
+            fs = ft.FeatureNormalizeStandard(s_name, s_type, fc, log)
+            with en.EnginePandasNumpy() as e:
+                td_df = ft.TensorDefinition('All', [fc])
+                df = e.from_csv(td_df, file, inference=False)
+                mn = log_fn(df['Amount']).mean()
+                st = log_fn(df['Amount']).std()
+                td2 = ft.TensorDefinition('Derived', [fs])
+                df = e.from_df(td2, df, td_df, inference=False)
+                self.assertEqual(len(df.columns), 1, f'Only one columns should have been returned')
+                self.assertEqual(df.columns[0], s_name, f'Column name is not correct {df.columns[0]}')
+                self.assertEqual(fs.inference_ready, True, f'Feature should now be inference ready')
+                self.assertEqual(fs.mean, mn, f'Mean not set correctly {fs.mean}')
+                self.assertEqual(fs.stddev, st, f'Standard Dev not set correctly {fs.stddev}')
+                self.assertListEqual(td2.continuous_features(True), [fs], f'Expanded Feature not correct')
 
     def test_read_base_inference(self):
         fc = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
@@ -472,6 +516,37 @@ class TestFeatureRatio(unittest.TestCase):
             td = ft.TensorDefinition('All', [fa, fd, fr])
             df = e.from_csv(td, file, inference=False)
             self.assertTrue((df[fr.name] == 0.0).all(), f'Ratios not all zero')
+
+
+class TestFeatureConcat(unittest.TestCase):
+    def test_base_concat(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
+        fm = ft.FeatureSource('MCC', ft.FEATURE_TYPE_STRING)
+        concat_name = 'concat'
+        fn = ft.FeatureConcat(concat_name, ft.FEATURE_TYPE_STRING, fc, fm)
+        with en.EnginePandasNumpy() as e:
+            td = ft.TensorDefinition('All', [fc, fm, fn])
+            df = e.from_csv(td, file, inference=False)
+            df['concat-1'] = df[fc.name] + df[fm.name]
+            self.assertTrue(df[fn.name].equals(df['concat-1']), f'Concat columns not equal')
+
+    def test_multiple_concat(self):
+        file = FILES_DIR + 'engine_test_base_comma.csv'
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
+        fm = ft.FeatureSource('MCC', ft.FEATURE_TYPE_STRING)
+        concat_name_1 = 'concat_1'
+        concat_name_2 = 'concat_2'
+        fn1 = ft.FeatureConcat(concat_name_1, ft.FEATURE_TYPE_STRING, fc, fm)
+        fn2 = ft.FeatureConcat(concat_name_2, ft.FEATURE_TYPE_STRING, fr, fr)
+        with en.EnginePandasNumpy() as e:
+            td = ft.TensorDefinition('All', [fc, fm, fr, fn1, fn2])
+            df = e.from_csv(td, file, inference=False)
+            df['concat-1'] = df[fc.name] + df[fm.name]
+            df['concat-2'] = df[fr.name] + df[fr.name]
+            self.assertTrue(df[fn1.name].equals(df['concat-1']), f'Concat columns not equal')
+            self.assertTrue(df[fn2.name].equals(df['concat-2']), f'Concat columns not equal')
 
 
 class TestReshape(unittest.TestCase):

@@ -5,8 +5,10 @@ Definition of normaliser features.
 from abc import ABC
 from dataclasses import dataclass
 from ..common import enforce_types
+from ..features.common import FeatureDefinitionException
 from ..features.common import FeatureWithBaseFeature
 from ..features.common import LearningCategory, LEARNING_CATEGORY_CONTINUOUS
+from typing import Optional, List
 
 
 @enforce_types
@@ -25,8 +27,25 @@ class FeatureNormalize(FeatureWithBaseFeature, ABC):
 
 
 @enforce_types
+@dataclass
+class FeatureNormalizeLogBase(FeatureNormalize, ABC):
+    log_base: Optional[str] = None
+
+    def log_base_valid(self):
+        if self.log_base is not None and self.log_base not in self.valid_bases():
+            raise FeatureDefinitionException(
+                f'Error creating {self.name}. Requested log base {self.log_base}. ' +
+                f'Supported bases are {self.valid_bases()}'
+            )
+
+    @staticmethod
+    def valid_bases() -> List[str]:
+        return ['e', '10', '2']
+
+
+@enforce_types
 @dataclass(unsafe_hash=True)
-class FeatureNormalizeScale(FeatureNormalize):
+class FeatureNormalizeScale(FeatureNormalizeLogBase):
     """
     Normalizing feature. Feature that scales a base feature between 0 and 1 with a min/max logic.
     """
@@ -36,6 +55,7 @@ class FeatureNormalizeScale(FeatureNormalize):
     def __post_init__(self):
         self.val_float_type()
         self.val_base_feature_is_float()
+        self.log_base_valid()
         # By default, return set embedded features to be the base feature.
         self.embedded_features = self.get_base_and_base_embedded_features()
 
@@ -46,7 +66,7 @@ class FeatureNormalizeScale(FeatureNormalize):
 
 @enforce_types
 @dataclass(unsafe_hash=True)
-class FeatureNormalizeStandard(FeatureNormalize):
+class FeatureNormalizeStandard(FeatureNormalizeLogBase):
     """
     Normalizing feature. Feature that standardises a base feature around mean zero and unit standard deviation.
     """
@@ -56,6 +76,7 @@ class FeatureNormalizeStandard(FeatureNormalize):
     def __post_init__(self):
         self.val_float_type()
         self.val_base_feature_is_float()
+        self.log_base_valid()
         # By default, return set embedded features to be the base feature.
         self.embedded_features = self.get_base_and_base_embedded_features()
 

@@ -172,6 +172,15 @@ class Feature(ABC):
         """
         self._val_type(FeatureTypeBool)
 
+    def val_string_type(self) -> None:
+        """
+        Validation method to check if the feature is string based. Will throw a FeatureDefinitionException
+        if the feature is NOT bool based.
+
+        @return: None
+        """
+        self._val_type(FeatureTypeString)
+
     @property
     @abstractmethod
     def learning_category(self) -> LearningCategory:
@@ -215,6 +224,19 @@ class FeatureWithBaseFeature(Feature, ABC):
             raise FeatureDefinitionException(
                 f'Base feature of a {self.__class__.__name__} must be a float type. ' +
                 f'Got <{type(self.base_feature.type)}>'
+            )
+
+    def val_base_feature_is_string(self):
+        """
+        Validation method to check if the base_feature is of type string. Will throw a FeatureDefinitionException
+        if the base feature is NOT a string.
+
+        @return: None
+        """
+        if not FeatureHelper.is_feature_of_type(self.base_feature, FeatureTypeString):
+            raise FeatureDefinitionException(
+                f'The base feature parameter of a {self.__class__.__name__} must be a string-type ' +
+                f'Got [{type(self.base_feature.type)}]'
             )
 
     def val_base_feature_is_string_or_integer(self):
