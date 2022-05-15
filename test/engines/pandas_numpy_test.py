@@ -4,9 +4,10 @@ Unit Tests for PandasNumpy Engine
 """
 import unittest
 import numpy as np
-from datetime import timedelta
+from datetime import timedelta, datetime
 from statistics import stdev
 from typing import List
+from collections import deque
 
 import pandas as pd
 
@@ -211,15 +212,15 @@ class TestNormalizeScale(unittest.TestCase):
                 fs = ft.FeatureNormalizeScale(s_name, s_type, fc, log)
                 td = ft.TensorDefinition('All', [fc])
                 df = e.from_csv(td, file, inference=False)
-                mn = log_fn(df['Amount']).min()
-                mx = log_fn(df['Amount']).max()
+                mn = log_fn(df['Amount']+fs.delta).min()
+                mx = log_fn(df['Amount']+fs.delta).max()
                 td2 = ft.TensorDefinition('Derived', [fs])
                 df = e.from_df(td2, df, td, inference=False)
                 self.assertEqual(len(df.columns), 1, f'Only one columns should have been returned')
                 self.assertEqual(df.columns[0], s_name, f'Column name is not correct {df.columns[0]}')
                 self.assertEqual(fs.inference_ready, True, f'Feature should now be inference ready')
-                self.assertEqual(fs.maximum, mx, f'Maximum not set correctly {fs.maximum}')
-                self.assertEqual(fs.minimum, mn, f'Minimum not set correctly {fs.maximum}')
+                self.assertAlmostEqual(fs.maximum, mx, 5, f'Maximum not set correctly {fs.maximum}')
+                self.assertAlmostEqual(fs.minimum, mn, 5, f'Minimum not set correctly {fs.maximum}')
                 self.assertListEqual(td2.continuous_features(True), [fs], f'Expanded Feature not correct')
 
     def test_read_base_inference(self):
@@ -275,8 +276,8 @@ class TestNormalizeStandard(unittest.TestCase):
             with en.EnginePandasNumpy() as e:
                 td_df = ft.TensorDefinition('All', [fc])
                 df = e.from_csv(td_df, file, inference=False)
-                mn = log_fn(df['Amount']).mean()
-                st = log_fn(df['Amount']).std()
+                mn = log_fn(df['Amount']+fs.delta).mean()
+                st = log_fn(df['Amount']+fs.delta).std()
                 td2 = ft.TensorDefinition('Derived', [fs])
                 df = e.from_df(td2, df, td_df, inference=False)
                 self.assertEqual(len(df.columns), 1, f'Only one columns should have been returned')
@@ -446,7 +447,7 @@ def zero_expr(x: float) -> float:
     return 0.0
 
 
-def test_date_expr(x: int) -> pd.Timestamp:
+def test_date_expr(x: int) -> datetime:
     y = pd.to_datetime(x)
     y = y + timedelta(days=1)
     return y
@@ -722,7 +723,7 @@ class TestGrouperFeature(unittest.TestCase):
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         fg = ft.FeatureGrouper(
-            '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
+            '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
         td2 = ft.TensorDefinition('Derived', [fd, fr, fa, ff, fg])
         tdx = ft.TensorDefinition('Derived', [fx, fr, fa, ff, fg])
         with en.EnginePandasNumpy() as e:
@@ -744,7 +745,7 @@ class TestGrouperFeature(unittest.TestCase):
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         td1 = ft.TensorDefinition('Source', [fd, fr, fa, ff])
         fg = ft.FeatureGrouper(
-            '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, ff, fr, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
+            '2_day_sum', ft.FEATURE_TYPE_FLOAT_32, ff, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM)
         td2 = ft.TensorDefinition('Derived', [fd, fr, fa, ff, fg])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
@@ -769,7 +770,7 @@ class TestGrouperFeature(unittest.TestCase):
             ('2_day_std', ft.AGGREGATOR_STDDEV, lambda x: 0 if len(x) == 1 else stdev(x))
         ]
         group_features = [
-            ft.FeatureGrouper(name, ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, time_window, agg)
+            ft.FeatureGrouper(name, ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, time_window, agg)
             for name, agg, _ in feature_def
         ]
         features: List[ft.Feature] = [
@@ -821,10 +822,10 @@ class TestGrouperFeature(unittest.TestCase):
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
         fg_1 = ft.FeatureGrouper(
-            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
+            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
         )
         fg_2 = ft.FeatureGrouper(
-            'country_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
+            'country_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
         )
         td2 = ft.TensorDefinition('Derived', [fg_1])
         td3 = ft.TensorDefinition('Derived', [fg_2])
@@ -847,13 +848,13 @@ class TestGrouperFeature(unittest.TestCase):
         f_not_one = ft.FeatureFilter('Not_Fraud', ft.FEATURE_TYPE_BOOL, fn_not_one, [fl])
         f_is_one = ft.FeatureFilter('Is_Fraud', ft.FEATURE_TYPE_BOOL, fn_one, [fl])
         fg_not_one = ft.FeatureGrouper(
-            'card_not_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, f_not_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
+            'card_not_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, f_not_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
         )
         fg_is_one = ft.FeatureGrouper(
-            'card_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, f_is_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
+            'card_one', ft.FEATURE_TYPE_FLOAT_32, fa, fr, f_is_one, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
         )
         fg_no_filter = ft.FeatureGrouper(
-            'card_no_filter', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
+            'card_no_filter', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 1, ft.AGGREGATOR_SUM
         )
         td = ft.TensorDefinition('Derived', [fd, fr, fc, fa, f_not_one, f_is_one, fg_not_one, fg_is_one, fg_no_filter])
         with en.EnginePandasNumpy() as e:
@@ -950,24 +951,577 @@ class TestBuildEmbedded(unittest.TestCase):
 
 
 class TestSeriesFrequencies(unittest.TestCase):
-    def test_create_base(self):
-        file = FILES_DIR + 'engine_test_base_comma.csv'
+    # Run some base day tests
+    def test_create_base_day(self):
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        tp = ft.TIME_PERIOD_DAY
+        freq = 3
+        td1 = ft.TensorDefinition('Base', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper(
+            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM
+        )
+        fg_2 = ft.FeatureGrouper(
+            'card_2d_count', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_COUNT
+        )
+        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+        # With 2 features this will create a single numpy with size (Batch x freq x 2)
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
+            self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain a single array')
+            self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[0].shape[0], len(df), f'The same number of lines as the input records')
+            self.assertEqual(n.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[0].shape[2], len(td2.features), f'Expected 3rd dim to be the number of features.')
+            amount_sum_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            amount_cnt_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            date_dict = {c: min(df[df['Card'] == c]['Date']).to_pydatetime() for c in df['Card'].unique()}
+            for i in range(len(df)):
+                d = tp.delta_between(date_dict[df.iloc[i]['Card']], df.iloc[i]['Date'].to_pydatetime())
+                # Shift numbers up by delta
+                s = amount_sum_dict.get(df.iloc[i]['Card'])
+                c = amount_cnt_dict.get(df.iloc[i]['Card'])
+                s.extend([0 for _ in range(d)])
+                c.extend([0 for _ in range(d)])
+                date_dict[df.iloc[i]['Card']] = df.iloc[i]['Date'].to_pydatetime()
+                # Add and count
+                s[freq - 1] = s[freq - 1] + float(df.iloc[i]['Amount'])
+                c[freq - 1] = c[freq - 1] + 1
+                self.assertTrue(np.array_equal(np.array(s), n.lists[0][i, :, 1]), f'Sums not same {i}')
+                self.assertTrue(np.array_equal(np.array(c), n.lists[0][i, :, 0]), f'Counts not same {i}')
+
+    # Run some base week tests
+    def test_create_base_week(self):
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        tp = ft.TIME_PERIOD_WEEK
+        freq = 3
+        td1 = ft.TensorDefinition('Base', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper(
+            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM
+        )
+        fg_2 = ft.FeatureGrouper(
+            'card_2d_count', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_COUNT
+        )
+        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+        # With 2 features this will create a single numpy with size (Batch x freq x 2)
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
+            self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain a single array')
+            self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[0].shape[0], len(df), f'The same number of lines as the input records')
+            self.assertEqual(n.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[0].shape[2], len(td2.features), f'Expected 3rd dim to be the number of features.')
+            amount_sum_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            amount_cnt_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            date_dict = {c: min(df[df['Card'] == c]['Date']).to_pydatetime() for c in df['Card'].unique()}
+            for i in range(len(df)):
+                s = amount_sum_dict.get(df.iloc[i]['Card'])
+                c = amount_cnt_dict.get(df.iloc[i]['Card'])
+                d1 = date_dict[df.iloc[i]['Card']]
+                d2 = df.iloc[i]['Date'].to_pydatetime()
+                d = tp.delta_between(tp.start_period(d1), tp.start_period(d2))
+                # Shift numbers up by delta
+                if d > 0:
+                    s.extend([0 for _ in range(d)])
+                    c.extend([0 for _ in range(d)])
+                    date_dict[df.iloc[i]['Card']] = df.iloc[i]['Date'].to_pydatetime()
+                # Add and count
+                s[freq - 1] = s[freq - 1] + float(df.iloc[i]['Amount'])
+                c[freq - 1] = c[freq - 1] + 1
+                self.assertTrue(np.array_equal(np.array(s), n.lists[0][i, :, 1]), f'Sums not same {i}')
+                self.assertTrue(np.array_equal(np.array(c), n.lists[0][i, :, 0]), f'Counts not same {i}')
+
+    # Run some base month tests
+    def test_create_base_month(self):
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        tp = ft.TIME_PERIOD_MONTH
+        freq = 3
+        td1 = ft.TensorDefinition('Base', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper(
+            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM
+        )
+        fg_2 = ft.FeatureGrouper(
+            'card_2d_count', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_COUNT
+        )
+        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+        # With 2 features this will create a single numpy with size (Batch x freq x 2)
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
+            self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain a single array')
+            self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[0].shape[0], len(df), f'The same number of lines as the input records')
+            self.assertEqual(n.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[0].shape[2], len(td2.features), f'Expected 3rd dim to be the number of features.')
+            amount_sum_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            amount_cnt_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            date_dict = {c: min(df[df['Card'] == c]['Date']).to_pydatetime() for c in df['Card'].unique()}
+            for i in range(len(df)):
+                s = amount_sum_dict.get(df.iloc[i]['Card'])
+                c = amount_cnt_dict.get(df.iloc[i]['Card'])
+                d1 = date_dict[df.iloc[i]['Card']]
+                d2 = df.iloc[i]['Date'].to_pydatetime()
+                d = tp.delta_between(tp.start_period(d1), tp.start_period(d2))
+                # Shift numbers up by delta
+                if d > 0:
+                    s.extend([0 for _ in range(d)])
+                    c.extend([0 for _ in range(d)])
+                    date_dict[df.iloc[i]['Card']] = df.iloc[i]['Date'].to_pydatetime()
+                # Add and count
+                s[freq - 1] = s[freq - 1] + float(df.iloc[i]['Amount'])
+                c[freq - 1] = c[freq - 1] + 1
+                self.assertTrue(np.array_equal(np.array(s), n.lists[0][i, :, 1]), f'Sums not same {i}')
+                self.assertTrue(np.array_equal(np.array(c), n.lists[0][i, :, 0]), f'Counts not same {i}')
+
+    # Combine various time-periods
+    def test_create_base_multiple_tp(self):
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        tp_day = ft.TIME_PERIOD_DAY
+        tp_week = ft.TIME_PERIOD_WEEK
+        tp_month = ft.TIME_PERIOD_MONTH
+        freq = 3
+        td1 = ft.TensorDefinition('Base', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper(
+            'card_3d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp_day, freq, ft.AGGREGATOR_SUM
+        )
+        fg_2 = ft.FeatureGrouper(
+            'card_3w_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp_week, freq, ft.AGGREGATOR_SUM
+        )
+        fg_3 = ft.FeatureGrouper(
+            'card_3m_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp_month, freq, ft.AGGREGATOR_SUM
+        )
+        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2, fg_3])
+        # With 2 features this will create a single numpy with size (Batch x freq x 2)
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
+            self.assertEqual(len(n.lists), 3, f'Expected the NumpyList to contain 3 arrays')
+            self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a list 0 numpy array return. Got {type(n.lists)}')
+            self.assertEqual(type(n.lists[1]), np.ndarray, f'Expected a list 1 numpy array return. Got {type(n.lists)}')
+            self.assertEqual(type(n.lists[2]), np.ndarray, f'Expected a list 2 numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[0].shape[0], len(df), f'The same number of lines as the input records. List 0')
+            self.assertEqual(n.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies. List 0')
+            self.assertEqual(n.lists[0].shape[2], 1, f'Expected 3rd dim to be 1. List 0')
+            self.assertEqual(n.lists[1].shape[0], len(df), f'The same number of lines as the input records. List 1')
+            self.assertEqual(n.lists[1].shape[1], freq, f'Expected 2nd dim to be the number of frequencies. List 1')
+            self.assertEqual(n.lists[1].shape[2], 1, f'Expected 3rd dim to be 1. List 1')
+            self.assertEqual(n.lists[2].shape[0], len(df), f'The same number of lines as the input records. List 2')
+            self.assertEqual(n.lists[2].shape[1], freq, f'Expected 2nd dim to be the number of frequencies. List 2')
+            self.assertEqual(n.lists[2].shape[2], 1, f'Expected 3rd dim to be 1. List 2')
+            amount_d_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            amount_w_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            amount_m_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            date_d_dict = {c: min(df[df['Card'] == c]['Date']).to_pydatetime() for c in df['Card'].unique()}
+            date_w_dict = {c: min(df[df['Card'] == c]['Date']).to_pydatetime() for c in df['Card'].unique()}
+            date_m_dict = {c: min(df[df['Card'] == c]['Date']).to_pydatetime() for c in df['Card'].unique()}
+            for i in range(len(df)):
+                for ad, dd, tp, j in zip([amount_d_dict, amount_w_dict, amount_m_dict],
+                                         [date_d_dict, date_w_dict, date_m_dict],
+                                         [tp_day, tp_week, tp_month],
+                                         [0, 1, 2]):
+                    s = ad.get(df.iloc[i]['Card'])
+                    d1 = dd[df.iloc[i]['Card']]
+                    d2 = df.iloc[i]['Date'].to_pydatetime()
+                    d = tp.delta_between(tp.start_period(d1), tp.start_period(d2))
+                    # Shift numbers up by delta
+                    if d > 0:
+                        s.extend([0 for _ in range(d)])
+                        dd[df.iloc[i]['Card']] = df.iloc[i]['Date'].to_pydatetime()
+                    # Add and count
+                    s[freq - 1] = s[freq - 1] + float(df.iloc[i]['Amount'])
+                    self.assertTrue(np.array_equal(np.array(s), n.lists[j][i, :, 0]), f'Sums not same {i} {j}')
+
+    def test_create_filter(self):
+        # Base test. See if the filtering works.
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq = 5
+        tp = ft.TIME_PERIOD_DAY
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
+        f_is_one = ft.FeatureFilter('Is_Fraud', ft.FEATURE_TYPE_BOOL, fn_one, [ff])
+        td1 = ft.TensorDefinition('Source', [fd, fr, fa, ff, f_is_one])
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        fg_2 = ft.FeatureGrouper('flt_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, f_is_one, tp, freq, ft.AGGREGATOR_SUM)
+        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+        # With 2 features this will create 1 numpy arrays with size (Batch x freq x 2)
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
+            self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain 1 arrays')
+            self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a list 0 numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(n.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[0].shape[2], 2, f'Expected 3rd dim to be 2.')
+            amount_flt_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            amount_n_flt_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            date_flt_dict = {
+                c: min(df[(df['Card'] == c) & (df['Fraud'] == 1)]['Date']).to_pydatetime() for c in df['Card'].unique()
+            }
+            date_n_flt_dict = {
+                c: min(df[df['Card'] == c]['Date']).to_pydatetime() for c in df['Card'].unique()
+            }
+            for i in range(len(df)):
+                for ad, dd, ff, j in zip([amount_n_flt_dict, amount_flt_dict],
+                                         [date_n_flt_dict, date_flt_dict],
+                                         [False, True],
+                                         [0, 1]):
+                    s = ad.get(df.iloc[i]['Card'])
+                    d1 = dd[df.iloc[i]['Card']]
+                    d2 = df.iloc[i]['Date'].to_pydatetime()
+                    d = tp.delta_between(tp.start_period(d1), tp.start_period(d2))
+                    if d > 0:
+                        # Shift numbers up by delta
+                        s.extend([0 for _ in range(d)])
+                        dd[df.iloc[i]['Card']] = df.iloc[i]['Date'].to_pydatetime()
+                    # Only actually add if for the non-filtered feature or if the filter is True
+                    f = df.iloc[i]['Fraud']
+                    if not ff or (ff and f == 1):
+                        s[freq - 1] = s[freq - 1] + float(df.iloc[i]['Amount'])
+                    self.assertTrue(np.array_equal(np.array(s), n.lists[0][i, :, j]), f'Sums not same {i} {j}')
+
+    def test_grouped_multiple_groups(self):
+        # Test if we can have multiple group features. Basically have multiple entities.
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq = 5
+        tp = ft.TIME_PERIOD_DAY
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
-        freq = 3
-        fg_1 = ft.FeatureGrouper(
-            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_SUM
-        )
-        fg_2 = ft.FeatureGrouper(
-            'card_2d_avg', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, None, ft.TIME_PERIOD_DAY, freq, ft.AGGREGATOR_AVG
-        )
+        td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        fg_2 = ft.FeatureGrouper('cty_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, tp, freq, ft.AGGREGATOR_SUM)
         td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+        # With 2 features this will create 1 numpy arrays with size (Batch x freq x 2). One for each group
         with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
             n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
-            print('x')
+            self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
+            self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain 1 arrays')
+            self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a list 0 numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(n.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[0].shape[2], 2, f'Expected 3rd dim to be 2.')
+            amount_cty_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Country'].unique()}
+            amount_crd_dict = {c: deque([0.0 for _ in range(freq)], maxlen=freq) for c in df['Card'].unique()}
+            date_cty_dict = {c: min(df[df['Country'] == c]['Date']).to_pydatetime() for c in df['Country'].unique()}
+            date_crd_dict = {c: min(df[df['Card'] == c]['Date']).to_pydatetime() for c in df['Card'].unique()}
+            for i in range(len(df)):
+                for ad, dd, key, j in zip([amount_cty_dict, amount_crd_dict],
+                                          [date_cty_dict, date_crd_dict],
+                                          ['Country', 'Card'],
+                                          [1, 0]):
+                    s = ad.get(df.iloc[i][key])
+                    d1 = dd[df.iloc[i][key]]
+                    d2 = df.iloc[i]['Date'].to_pydatetime()
+                    d = tp.delta_between(tp.start_period(d1), tp.start_period(d2))
+                    # Shift numbers up by delta
+                    if d > 0:
+                        s.extend([0 for _ in range(d)])
+                        dd[df.iloc[i][key]] = df.iloc[i]['Date'].to_pydatetime()
+                    # Add and count
+                    s[freq - 1] = s[freq - 1] + float(df.iloc[i]['Amount'])
+                    self.assertTrue(np.array_equal(np.array(s), n.lists[0][i, :, j]), f'Sums not same {i} {j}')
+
+    def test_normalizer_scale(self):
+        # Test Frequency Normalization.
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq = 5
+        tp = ft.TIME_PERIOD_DAY
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        fg_2 = ft.FeatureNormalizeScale('crd_5d_sum_n', ft.FEATURE_TYPE_FLOAT_32, fg_1)
+        td2 = ft.TensorDefinition('Frequencies', [fg_1])
+        td3 = ft.TensorDefinition('FrequenciesNormalized', [fg_2])
+        # With 2 features this will create 1 numpy arrays with size (Batch x freq x 1). One for each group
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            mn = np.min(n.lists[0], axis=(0, 1))
+            mx = np.max(n.lists[0], axis=(0, 1))
+            self.assertFalse(td3.inference_ready, f'Should not be inference ready before series build')
+            nn = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            self.assertTrue(td3.inference_ready, f'Should have been inference ready after series build')
+            self.assertEqual(type(nn), en.NumpyList, f'expected a return of Numpy List. Got {type(nn)} ')
+            self.assertEqual(len(nn.lists), 1, f'Expected the NumpyList to contain 1 arrays')
+            self.assertEqual(type(nn.lists[0]), np.ndarray, f'Expected list 0 numpy array return. Got {type(nn.lists)}')
+            self.assertEqual(nn.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(nn.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(nn.lists[0].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(fg_2.minimum, mn.item(), f'Minimum not set correctly {fg_2.minimum} {mn.item()}')
+            self.assertEqual(fg_2.maximum, mx.item(), f'Maximum not set correctly {fg_2.maximum} {mx.item()}')
+            nr = (n.lists[0] - mn.item()) / (mx.item() - mn.item())
+            self.assertTrue(np.array_equal(nn.lists[0], nr), f'Calculated array should be same as frequency output')
+
+    def test_normalizer_scale_log(self):
+        # Test Frequency Normalization.
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq = 5
+        s_name = 'scale_log'
+        s_type = ft.FEATURE_TYPE_FLOAT_32
+        tp = ft.TIME_PERIOD_DAY
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        for log, log_fn in (('e', np.log), ('2', np.log2), ('10', np.log10)):
+            fs = ft.FeatureNormalizeScale(s_name, s_type, fg_1, log)
+            with en.EnginePandasNumpy() as e:
+                td_df = ft.TensorDefinition('All', [fg_1])
+                na = e.to_series_frequencies(td_df, file, fr, fd, inference=False)
+                self.assertEqual(len(na.lists), 1, f'Expected to get 1 list, got {len(na.lists)}')
+                mn = log_fn(na.lists[0]+fs.delta).min(axis=(0, 1))
+                mx = log_fn(na.lists[0]+fs.delta).max(axis=(0, 1))
+                td2 = ft.TensorDefinition('Derived', [fs])
+                nas = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+                self.assertTrue(td2.inference_ready, f'Should have been inference ready after series build')
+                self.assertEqual(type(nas), en.NumpyList, f'expected a return of Numpy List. Got {type(nas)} ')
+                self.assertEqual(len(nas.lists), 1, f'Expected the NumpyList to contain 1 arrays')
+                self.assertEqual(type(nas.lists[0]), np.ndarray,
+                                 f'Expected list 0 numpy array return. Got {type(nas.lists)}')
+                self.assertEqual(nas.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+                self.assertEqual(nas.lists[0].shape[2], 1, f'Expected 3rd dim to be 1.')
+                self.assertEqual(fs.minimum, mn.item(), f'Minimum not set correctly {fs.minimum} {mn.item()}')
+                self.assertEqual(fs.maximum, mx.item(), f'Maximum not set correctly {fs.maximum} {mx.item()}')
+                nr = (log_fn(na.lists[0]+fs.delta) - mn.item()) / (mx.item() - mn.item())
+                self.assertTrue(np.array_equal(nas.lists[0], nr), f'Calculated should be same as frequency output')
+
+    def test_normalizer_standard(self):
+        # Test Frequency Normalization.
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq = 5
+        tp = ft.TIME_PERIOD_DAY
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fc = ft.FeatureSource('Country', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        fg_2 = ft.FeatureNormalizeStandard('crd_5d_sum_n', ft.FEATURE_TYPE_FLOAT_32, fg_1)
+        td2 = ft.TensorDefinition('Frequencies', [fg_1])
+        td3 = ft.TensorDefinition('FrequenciesNormalized', [fg_2])
+        # With 2 features this will create 1 numpy arrays with size (Batch x freq x 1). One for each group
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            mn = np.mean(n.lists[0], axis=(0, 1))
+            st = np.std(n.lists[0], axis=(0, 1))
+            self.assertFalse(td3.inference_ready, f'Should not be inference ready before series build')
+            nn = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            self.assertTrue(td3.inference_ready, f'Should have been inference ready after series build')
+            self.assertEqual(type(nn), en.NumpyList, f'expected a return of Numpy List. Got {type(nn)} ')
+            self.assertEqual(len(nn.lists), 1, f'Expected the NumpyList to contain 1 arrays')
+            self.assertEqual(type(nn.lists[0]), np.ndarray, f'Expected list 0 numpy array return. Got {type(nn.lists)}')
+            self.assertEqual(nn.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(nn.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(nn.lists[0].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(fg_2.mean, mn.item(), f'Minimum not set correctly {fg_2.mean} {mn.item()}')
+            self.assertEqual(fg_2.stddev, st.item(), f'Maximum not set correctly {fg_2.stddev} {st.item()}')
+            nr = (n.lists[0] - mn.item()) / st.item()
+            self.assertTrue(np.array_equal(nn.lists[0], nr), f'Calculated array should be same as frequency output')
+
+    def test_normalizer_standard_log(self):
+        # Test Frequency Normalization.
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq = 5
+        s_name = 'standard_log'
+        s_type = ft.FEATURE_TYPE_FLOAT_32
+        tp = ft.TIME_PERIOD_DAY
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        for log, log_fn in (('e', np.log), ('2', np.log2), ('10', np.log10)):
+            fs = ft.FeatureNormalizeStandard(s_name, s_type, fg_1, log)
+            with en.EnginePandasNumpy() as e:
+                td_df = ft.TensorDefinition('All', [fg_1])
+                na = e.to_series_frequencies(td_df, file, fr, fd, inference=False)
+                self.assertEqual(len(na.lists), 1, f'Expected to get 1 list, got {len(na.lists)}')
+                mn = log_fn(na.lists[0]+fs.delta).mean(axis=(0, 1))
+                st = log_fn(na.lists[0]+fs.delta).std(axis=(0, 1))
+                td2 = ft.TensorDefinition('Derived', [fs])
+                nas = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+                self.assertTrue(td2.inference_ready, f'Should have been inference ready after series build')
+                self.assertEqual(type(nas), en.NumpyList, f'expected a return of Numpy List. Got {type(nas)} ')
+                self.assertEqual(len(nas.lists), 1, f'Expected the NumpyList to contain 1 arrays')
+                self.assertEqual(type(nas.lists[0]), np.ndarray,
+                                 f'Expected list 0 numpy array return. Got {type(nas.lists)}')
+                self.assertEqual(nas.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+                self.assertEqual(nas.lists[0].shape[2], 1, f'Expected 3rd dim to be 1.')
+                self.assertEqual(fs.mean, mn.item(), f'Mean not set correctly {fs.mean} {mn.item()}')
+                self.assertEqual(fs.stddev, st.item(), f'Stddev not set correctly {fs.stddev} {st.item()}')
+                nr = (log_fn(na.lists[0]+fs.delta) - mn.item()) / st.item()
+                self.assertTrue(np.array_equal(nas.lists[0], nr), f'Calculated should be same as frequency output')
+
+    def test_normalizer_combine_scale_standard(self):
+        # Test Frequency Normalization. See if a combination of Standard and Scaling works.
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq = 5
+        tp = ft.TIME_PERIOD_DAY
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        fg_2 = ft.FeatureNormalizeStandard('crd_5d_sum_st', ft.FEATURE_TYPE_FLOAT_32, fg_1)
+        fg_3 = ft.FeatureNormalizeScale('crd_5d_sum_sc', ft.FEATURE_TYPE_FLOAT_32, fg_1)
+        td2 = ft.TensorDefinition('FrequenciesBase', [fg_1])
+        td3 = ft.TensorDefinition('FrequenciesNormalizedStandard', [fg_2])
+        td4 = ft.TensorDefinition('FrequenciesNormalizedScale', [fg_3])
+        td5 = ft.TensorDefinition('FrequenciesAll', [fg_1, fg_2, fg_3])
+        # With 1 features this will create 1 numpy arrays with size (Batch x freq x 1). One for each group
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            self.assertFalse(td3.inference_ready, f'Should not be inference ready before series build')
+            nst = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            nsc = e.to_series_frequencies(td4, file, fr, fd, inference=False)
+            nsa = e.to_series_frequencies(td5, file, fr, fd, inference=False)
+            self.assertTrue(td5.inference_ready, f'Should have been inference ready after series build')
+            self.assertEqual(type(nsa), en.NumpyList, f'expected a return of Numpy List. Got {type(nsa)} ')
+            self.assertEqual(len(nsa.lists), 1, f'Expected the NumpyList to contain 1 arrays')
+            self.assertEqual(type(nsa.lists[0]), np.ndarray, f'Expected list 0 array return. Got {type(nsa.lists)}')
+            self.assertEqual(nsa.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(nsa.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(nsa.lists[0].shape[2], 3, f'Expected 3rd dim to be 3.')
+            # First Feature of the combined list should have been the same as the base list
+            self.assertTrue(np.array_equal(np.squeeze(n.lists[0]), nsa.lists[0][:, :, 0]), f'Base Feature not the same')
+            # Second Feature of the combined list should have been the same as the Standard list
+            self.assertTrue(np.array_equal(np.squeeze(nst.lists[0]), nsa.lists[0][:, :, 1]), f'Standard not the same')
+            # Third Feature of the combined list should have been the same as the Scale list
+            self.assertTrue(np.array_equal(np.squeeze(nsc.lists[0]), nsa.lists[0][:, :, 2]), f'Scale not the same')
+
+    def test_normalizer_multiple_time_windows(self):
+        # Test Frequency Normalization. See if a combination of Standard and Scaling works.
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq1 = 5
+        freq2 = 10
+        tp = ft.TIME_PERIOD_DAY
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper('crd_10d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq2, ft.AGGREGATOR_SUM)
+        fg_2 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq1, ft.AGGREGATOR_SUM)
+        fg_3 = ft.FeatureNormalizeScale('crd_10d_sum_sc', ft.FEATURE_TYPE_FLOAT_32, fg_1)
+        fg_4 = ft.FeatureNormalizeStandard('crd_5d_sum_st', ft.FEATURE_TYPE_FLOAT_32, fg_2)
+        td2 = ft.TensorDefinition('FrequenciesBase', [fg_1, fg_2])
+        td3 = ft.TensorDefinition('FrequenciesNormalizedStandard', [fg_3, fg_4])
+        # With 2 features this will create 2 numpy arrays with size (Batch x freq x 1). One for each time period
+        # Note that in the Frequency the output is ordered. So fg_2, the 5 time period will come first
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            nn = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            mn5 = np.mean(n.lists[0], axis=(0, 1))
+            st5 = np.std(n.lists[0], axis=(0, 1))
+            mn10 = np.min(n.lists[1], axis=(0, 1))
+            mx10 = np.max(n.lists[1], axis=(0, 1))
+            self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
+            self.assertEqual(len(n.lists), 2, f'Expected the NumpyList to contain 2 arrays')
+            self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected list 0 numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(n.lists[0].shape[1], freq1, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[0].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(type(n.lists[1]), np.ndarray, f'Expected list 0 numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[1].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(n.lists[1].shape[1], freq2, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[1].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(type(nn), en.NumpyList, f'expected a return of Numpy List. Got {type(nn)} ')
+            self.assertEqual(len(nn.lists), 2, f'Expected the NumpyList to contain 2 arrays')
+            self.assertEqual(type(nn.lists[0]), np.ndarray, f'Expected list 0 numpy array return. Got {type(nn.lists)}')
+            self.assertEqual(nn.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(nn.lists[0].shape[1], freq1, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(nn.lists[0].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(type(nn.lists[1]), np.ndarray, f'Expected list 0 numpy array return. Got {type(nn.lists)}')
+            self.assertEqual(nn.lists[1].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(nn.lists[1].shape[1], freq2, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(nn.lists[1].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(fg_4.mean, mn5.item(), f'Minimum not set correctly {fg_4.mean} {mn5.item()}')
+            self.assertEqual(fg_4.stddev, st5.item(), f'Maximum not set correctly {fg_4.stddev} {st5.item()}')
+            nr = (n.lists[0] - mn5.item()) / st5.item()
+            self.assertTrue(np.array_equal(nn.lists[0], nr), f'Calculated array should be same as frequency output')
+            self.assertEqual(fg_3.minimum, mn10.item(), f'Minimum not set correctly {fg_3.minimum} {mn10.item()}')
+            self.assertEqual(fg_3.maximum, mx10.item(), f'Maximum not set correctly {fg_3.maximum} {mx10.item()}')
+            nr = (n.lists[1] - mn10.item()) / (mx10.item() - mn10.item())
+            self.assertTrue(np.array_equal(nn.lists[1], nr), f'Calculated array should be same as frequency output')
+
+    def test_normalizer_multiple_time_periods(self):
+        # Test Frequency Normalization. See if multiple time periods work
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        freq = 5
+        tp2 = ft.TIME_PERIOD_WEEK
+        tp1 = ft.TIME_PERIOD_DAY
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        td1 = ft.TensorDefinition('Source', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper('crd_5w_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp2, freq, ft.AGGREGATOR_SUM)
+        fg_2 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp1, freq, ft.AGGREGATOR_SUM)
+        fg_3 = ft.FeatureNormalizeScale('crd_5w_sum_sc', ft.FEATURE_TYPE_FLOAT_32, fg_1)
+        fg_4 = ft.FeatureNormalizeStandard('crd_5d_sum_st', ft.FEATURE_TYPE_FLOAT_32, fg_2)
+        td2 = ft.TensorDefinition('FrequenciesBase', [fg_1, fg_2])
+        td3 = ft.TensorDefinition('FrequenciesNormalized', [fg_3, fg_4])
+        # With 2 features this will create 2 numpy array with size (Batch x freq x 1). One for each time period
+        with en.EnginePandasNumpy() as e:
+            df = e.from_csv(td1, file, inference=False)
+            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            nn = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            mnd = np.mean(n.lists[0], axis=(0, 1))
+            std = np.std(n.lists[0], axis=(0, 1))
+            mnw = np.min(n.lists[1], axis=(0, 1))
+            mxw = np.max(n.lists[1], axis=(0, 1))
+            self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
+            self.assertEqual(len(n.lists), 2, f'Expected the NumpyList to contain 2 arrays')
+            self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected list 0 numpy array return. Got {type(n.lists)}')
+            self.assertEqual(n.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(n.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[0].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(n.lists[1].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(n.lists[1].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(n.lists[1].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(type(nn), en.NumpyList, f'expected a return of Numpy List. Got {type(nn)} ')
+            self.assertEqual(len(nn.lists), 2, f'Expected the NumpyList to contain 2 array')
+            self.assertEqual(type(nn.lists[0]), np.ndarray, f'Expected list 0 numpy array return. Got {type(nn.lists)}')
+            self.assertEqual(nn.lists[0].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(nn.lists[0].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(nn.lists[0].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(nn.lists[1].shape[0], len(df), f'The same number of lines as the input records.')
+            self.assertEqual(nn.lists[1].shape[1], freq, f'Expected 2nd dim to be the number of frequencies.')
+            self.assertEqual(nn.lists[1].shape[2], 1, f'Expected 3rd dim to be 1.')
+            self.assertEqual(fg_4.mean, mnd.item(), f'Minimum not set correctly {fg_4.mean} {mnd.item()}')
+            self.assertEqual(fg_4.stddev, std.item(), f'Maximum not set correctly {fg_4.stddev} {std.item()}')
+            nr = (n.lists[0] - mnd.item()) / std.item()
+            self.assertTrue(np.array_equal(nn.lists[0], nr), f'Calculated array should equal to frequency')
+            self.assertEqual(fg_3.minimum, mnw.item(), f'Minimum not set correctly {fg_3.minimum} {mnw.item()}')
+            self.assertEqual(fg_3.maximum, mxw.item(), f'Maximum not set correctly {fg_3.maximum} {mxw.item()}')
+            nr = (n.lists[1] - mnw.item()) / (mxw.item() - mnw.item())
+            self.assertTrue(np.array_equal(nn.lists[1], nr), f'Calculated array should equal to frequency')
 
 
 def main():

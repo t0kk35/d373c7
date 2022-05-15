@@ -30,6 +30,7 @@ class FeatureNormalize(FeatureWithBaseFeature, ABC):
 @dataclass
 class FeatureNormalizeLogBase(FeatureNormalize, ABC):
     log_base: Optional[str] = None
+    delta: float = 1e-2
 
     def log_base_valid(self):
         if self.log_base is not None and self.log_base not in self.valid_bases():

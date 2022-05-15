@@ -16,13 +16,27 @@ class NumpyListException(Exception):
 
 
 class NumpyList:
-    """Helper Class for a group of numpy arrays. It allows running operations like slicing, sampling, shuffling...
+    """
+    Helper Class for a group of numpy arrays. It allows running operations like slicing, sampling, shuffling...
     consistently across a list of numpy arrays.
 
-    argument numpy_list: A List of numpy arrays. They must all be of the same length.
+    Args:
+        numpy_list (List[np.ndarray]) : A List of numpy arrays. They must all be of the same length.
     """
     @staticmethod
-    def _val_all_same_0_dim(numpy_list: List[np.array]):
+    def _val_all_same_0_dim(numpy_list: List[np.ndarray]):
+        """
+        Check that all arrays have the shape share in the 0th dimension.
+
+        Args:
+            numpy_list (List[np.ndarray]): The list of numpy arrays to validate
+
+        Raises:
+            NumpyListException : If the size of the 0th dimension is not the same for all arrays.
+
+        Returns:
+            None
+        """
         if len(set(list([n_entry.shape[0] for n_entry in numpy_list]))) > 1:
             raise NumpyListException(f'All Numpy arrays in a Numpy list must have the same number of rows')
 
@@ -51,7 +65,7 @@ class NumpyList:
             )
 
     @staticmethod
-    def _val_all_same_1_n_dim(numpy_l: np.array, numpy_r: np.array):
+    def _val_all_same_1_n_dim(numpy_l: np.array, numpy_r: np.ndarray):
         if numpy_l.shape[1:] != numpy_r.shape[1:]:
             raise NumpyListException(
                 f'Except for the 1st dimension, all numpy arrays must have the same shape. Left shape {numpy_l.shape}'
@@ -59,7 +73,7 @@ class NumpyList:
             )
 
     @staticmethod
-    def _val_label_has_1_dim(array: np.array):
+    def _val_label_has_1_dim(array: np.ndarray):
         if len(array.shape) != 1:
             raise NumpyListException(
                 f'The array containing the label for split should only have 1 dimension. it has {len(array.shape)}'
@@ -99,11 +113,11 @@ class NumpyList:
                 f'Check log for details.'
             )
 
-    def __init__(self, numpy_list: List[np.array]):
+    def __init__(self, numpy_list: List[np.ndarray]):
         NumpyList._val_all_same_0_dim(numpy_list)
         self._numpy_list = numpy_list
 
-    def __getitem__(self, subscript) -> np.array:
+    def __getitem__(self, subscript) -> 'NumpyList':
         if isinstance(subscript, slice):
             return self._slice(subscript.start, subscript.stop)
         elif isinstance(subscript, int):
@@ -126,34 +140,44 @@ class NumpyList:
 
     @property
     def dtype_names(self) -> List[str]:
-        """Returns the names (i.e. as string) dtypes of the underlying numpy arrays.
+        """
+        Returns the names (i.e. as string) of the dtypes of the underlying numpy arrays.
 
-        @return: List of string dtype string representations
+        Returns:
+            List of string dtype string representations
         """
         return [array.dtype.name for array in self._numpy_list]
 
     @property
     def shapes(self) -> List[Tuple[int]]:
-        """Get the shapes of the underlying numpy lists. Returns a list of Tuples. One tuple for each numpy in the class
+        """
+        Get the shapes of the underlying numpy lists. Returns a list of Tuples. One tuple for each numpy in the class
 
-        @return: A List of Tuples. Each Tuple contains the shape of a numpy
+        Returns:
+            A List of Tuples. Each Tuple contains the shape of a numpy
         """
         return [array.shape for array in self._numpy_list]
 
     @property
     def number_of_lists(self) -> int:
-        """Returns the number of numpy arrays contained within this class
+        """
+        Returns the number of numpy arrays contained within this object
 
-        @return: The number of numpy arrays in the list as int object.
+        Returns:
+            The number of numpy arrays in the list as int object.
         """
         return len(self._numpy_list)
 
     def pop(self, index: int) -> np.ndarray:
-        """Pop a numpy array from the list by index. This will return the numpy array at the index and remove it from
+        """
+        Pop a numpy array from the list by index. This will return the numpy array at the index and remove it from
         the list.
 
-        @param index: The index of the numpy array to be popped
-        @return: A numpy array at 'index'. If it exists. Side effect: The numpy will be removed from the list
+        Args:
+            index (int) : The index of the numpy array to be popped
+
+        Returns:
+            A numpy array at 'index'. If it exists. Side effect: The numpy will be removed from the list
         """
         self._val_index_in_range(self, index)
         ret = self._numpy_list[index]
@@ -161,18 +185,27 @@ class NumpyList:
         return ret
 
     def remove(self, index: int) -> None:
-        """Remove a numpy array from the list.
+        """
+        Remove a numpy array from the list.
 
-        @param index: Index of the numpy list to be removed. If that index exists.
+        Args:
+            index (int) : Index of the numpy list to be removed. If that index exists.
+
+        Returns:
+            None
         """
         self._val_index_in_range(self, index)
         del self._numpy_list[index]
 
     def unique(self, index: int) -> (List[int], List[int]):
-        """Return the unique entries and counts of a specific numpy list
+        """
+        Return the unique sorted entries and counts of a specific array within this NumpyList
 
-        @param index: Index of the list for which to run the unique operation.
-        @return: A Tuple, the first element is the unique entries, the second entry is the counts.
+        Args:
+            index (int): Index of the list for which to run the unique operation.
+
+        Returns:
+            A Tuple, the first element is the unique entries, the second entry is the counts.
         """
         NumpyList._val_index_in_range(self, index)
         NumpyList._val_is_integer_type(self, index)
@@ -180,21 +213,27 @@ class NumpyList:
         return list(val), list(cnt)
 
     def shuffle(self) -> 'NumpyList':
-        """Shuffle the numpy arrays in the list across the 0 dimension. The shuffling is consistent across lists.
+        """
+        Shuffle the numpy arrays in the list across the 0 dimension. The shuffling is consistent across lists.
         Meaning that for instance all rows in the various arrays at index x of the input will be moved to index y.
         This will make sure samples are shuffled consistently
 
-        @return: The shuffled numpy arrays.
+        Returns:
+            A NumpyList containing the shuffled numpy arrays.
         """
         permutation = np.random.permutation(self._numpy_list[0].shape[0])
         shuffled = [sequence[permutation] for sequence in self._numpy_list]
         return NumpyList(shuffled)
 
     def sample(self, number_of_rows: int) -> 'NumpyList':
-        """Sample random 'number_of_rows' from each of the arrays in the list. Each array will be sampled consistently
+        """
+        Sample random 'number_of_rows' from each of the arrays in the list. Each array will be sampled consistently
 
-        @param number_of_rows : The number of rows to sample from the arrays
-        @return: The sampled list of numpy arrays
+        Args:
+            number_of_rows (int): The number of rows to sample from the arrays
+
+        Returns:
+            The sampled list of numpy arrays in a NumpyList object
         """
         self._slice_in_range(self, number_of_rows)
         permutation = np.random.permutation(number_of_rows)
@@ -202,11 +241,15 @@ class NumpyList:
         return NumpyList(sampled)
 
     def _slice(self, from_row_number=None, to_row_number=None) -> 'NumpyList':
-        """Slice all arrays in a numpy list.
+        """
+        Slice all the arrays in this NumpyList
 
-        @param: from_row_number:
-        @param: to_row_number:
-        @return: The sliced numpy list
+        Args:
+            from_row_number (int): The start number
+            to_row_number (int): The end number (exclusive)
+
+        Returns:
+            The sliced numpy list
         """
         if from_row_number is not None and to_row_number is not None:
             self._slice_in_range(self, from_row_number)
@@ -223,11 +266,15 @@ class NumpyList:
         return NumpyList(sliced)
 
     def filter_label(self, tensor_def: [TensorDefinition, TensorDefinitionMulti], label: Any) -> 'NumpyList':
-        """Method to filter a specific class from the labels. It can for instance be used to filter Fraud or Non-Fraud
+        """
+        Method to filter a specific class from the labels. It can for instance be used to filter Fraud or Non-Fraud
 
-        @param tensor_def: The TensorDefinition or TensorDefinitionMulti used to build the NumpyList
-        @param label: The label value (class) we want to filter.
-        @return: New filtered numpy list, filtered on the label value
+        Args:
+            tensor_def (TensorDefinition): The TensorDefinition or TensorDefinitionMulti used to build the NumpyList
+            label (Any): The label value (class) we want to filter.
+
+        Returns:
+            New filtered numpy list, filtered on the label value
         """
         if isinstance(tensor_def, TensorDefinitionMulti):
             self.multi_is_built_from(tensor_def)
@@ -247,10 +294,14 @@ class NumpyList:
         return NumpyList(lists)
 
     def concat(self, numpy_list: 'NumpyList') -> 'NumpyList':
-        """Function to concatenate 2 numpy_lists. It will concatenate each individual numpy in the list
+        """
+        Function to concatenate 2 numpy_lists. It will concatenate each individual numpy in the list
 
-        @param numpy_list: The numpy list to concatenate to the current list
-        @return: A numpy list with the input numpy list concatenated to the current numpy list
+        Args:
+            numpy_list: The numpy list to concatenate to the current list
+
+        Returns:
+            A numpy list with the input numpy list concatenated to the current numpy list
         """
         NumpyList._val_same_number_of_lists(self, numpy_list)
         new_list = []
@@ -265,14 +316,18 @@ class NumpyList:
         return NumpyList(new_list)
 
     def split_time(self, val_number: int, test_number: int) -> Tuple['NumpyList', 'NumpyList', 'NumpyList']:
-        """Split a numpy list into training, validation and test. Where the first portion of the data is training, the
+        """
+        Split a numpy list into training, validation and test. Where the first portion of the data is training, the
         middle is the validation and the end of the data is the test. This is almost always the best way to split
         transactional data. First the 'test_number' of records data is taken from the end of the arrays. Of what is
         left the 'val_number' is taken all that is left is training.
 
-        @param val_number: Number of records to allocate in the validation set
-        @param test_number: Number of records to allocate in the test set.
-        @return: Tuple of 3 numpy lists containing the training, validation and test data respectively
+        Args:
+            val_number (int): Number of records to allocate to the validation set
+            test_number (int): Number of records to allocate to the test set.
+
+        Returns:
+            Tuple of 3 numpy lists containing the training, validation and test data respectively
         """
         NumpyList._val_val_plus_test_smaller_than_length(self, val_number, test_number)
         # Take x from end of lists as test
@@ -284,11 +339,15 @@ class NumpyList:
         return train, val, test
 
     def is_built_from(self, tensor_definition: TensorDefinition) -> bool:
-        """Method to validate that a Numpy list was likely built from a specific tensor definition. The data types can
+        """
+        Method to validate that a Numpy list was likely built from a specific tensor definition. The data types can
         not be checked. The checks mainly revolve around the sizes of the lists.
 
-        @param tensor_definition: The tensor definition to be checked.
-        @return: True of False True if this Numpy List and TensorDefinition are compatible
+        Args:
+            tensor_definition (TensorDefinition): The tensor definition to be checked.
+
+        Returns:
+            True of False True if this Numpy List and TensorDefinition are compatible
         """
         if not tensor_definition.inference_ready:
             logger.info(f'Tensor Definition and Numpy list not compatible. Tensor Definition is not inference ready')
@@ -313,11 +372,15 @@ class NumpyList:
         return True
 
     def multi_filter(self, tensor_def_m: TensorDefinitionMulti, tensor_def_filter: TensorDefinition) -> 'NumpyList':
-        """Filters the lists of a specific tensor_definition out of the TensorDefinitionMultiHead
+        """
+        Filters the lists of a specific tensor_definition out of the TensorDefinitionMultiHead
 
-        @param tensor_def_m: The TensorDefinitionMulti that was used to build the Numpy.
-        @param tensor_def_filter: The TensorDefinition we want the lists for.
-        @return: New NumpyList object containing only the lists of the filtered TensorDefinition
+        Args:
+            tensor_def_m (TensorDefinitionMulti): The TensorDefinitionMulti that was used to build the Numpy.
+            tensor_def_filter (TensorDefinition): The TensorDefinition we want the lists for.
+
+        Returns:
+            New NumpyList object containing only the lists of the filtered TensorDefinition
         """
         # Build a list of accumulated counts.
         acc_counts = [0]
@@ -330,12 +393,16 @@ class NumpyList:
         return npl
 
     def multi_is_built_from(self, tensor_def: TensorDefinitionMulti):
-        """Method to validate that a Numpy list was likely built from a specific TensorDefinitionMultiHead object. The
+        """
+        Method to validate that a Numpy list was likely built from a specific TensorDefinitionMultiHead object. The
         data types can not be checked. The checks mainly revolve around the sizes of the lists. This method supports
         multi-head.
 
-        @param tensor_def: The TensorDefinitionMultiHead object that needs to be checked.
-        @return: True of False. True if this Numpy List and TensorDefinition are compatible
+        Args:
+            tensor_def: The TensorDefinitionMultiHead object that needs to be checked.
+
+        Returns:
+            True of False. True if this Numpy List and TensorDefinition are compatible
         """
         # Split the Numpy list into the components from each TensorDefinition
         nps = [self.multi_filter(tensor_def, td) for td in tensor_def.tensor_definitions]

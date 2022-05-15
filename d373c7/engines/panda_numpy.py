@@ -14,7 +14,7 @@ from itertools import groupby
 from collections import OrderedDict
 from typing import Dict, List, Callable, Type, Tuple, Optional, Union
 from .common import EngineContext
-from .profile import ProfileNative
+from .profile_numpy import ProfileNumpy
 from .numpy_helper import NumpyList
 from ..features.common import Feature, FeatureTypeTimeBased, FEATURE_TYPE_CATEGORICAL
 from ..features.common import FeatureTypeInteger, FeatureHelper
@@ -52,11 +52,11 @@ PandaTypes: Dict[str, Tuple[str, Type]] = {
 
 
 class EnginePandasNumpy(EngineContext):
-    """Panda and Numpy engine. It's main function is to take build Panda and Numpy structures from given
-    tensor definition.
+    """
+    Panda and Numpy engine. It's main function is to take build Panda and Numpy structures from given tensor definition.
 
     Args:
-        num_threads: The maximum number of thread the engine will use during multiprocess processing
+        num_threads (int): The maximum number of thread the engine will use during multiprocess processing
 
     Attributes:
         one_hot_prefix: The standard pre_fix to create one hot features.
@@ -181,15 +181,20 @@ class EnginePandasNumpy(EngineContext):
                     )
 
     @staticmethod
-    def _val_grouper_based(target_tensor_def: TensorDefinition) -> List[FeatureGrouper]:
+    def _val_grouper_based(
+            target_tensor_def: TensorDefinition
+    ) -> List[Tuple[FeatureGrouper, Optional[FeatureNormalize]]]:
         """
-        Function that will validate that the target tensor definition contains only FeatureGroupers or Normaliser
+        Function that will validate that the target tensor definition contains only FeatureGroupers or Normalizer
         features with a FeatureGrouper as base feature.
-        @param target_tensor_def: The tensor definition to check
-        @return: A list of FeatureGroupers. Either found in the target_tensor_def or as base_feature
-        of a FeatureNormalizer in the target_tensor_def
+
+        Args:
+            target_tensor_def: The tensor definition to check
+
+        Returns: List[Tuple[FeatureGrouper, Optional[FeatureNormalize]]]: List that contains all the feature groupers
+        in the target_tensor def, either directly or as base_feature to a normalizer.
         """
-        out: List[FeatureGrouper] = []
+        out: List[Tuple[FeatureGrouper, Optional[FeatureNormalize]]] = []
         for f in target_tensor_def.features:
             fg = FeatureHelper.filter_feature(FeatureGrouper, [f])
             if not len(fg) > 0:
@@ -202,11 +207,11 @@ class EnginePandasNumpy(EngineContext):
                             f'FeatureNormalize with a FeatureGrouper as base_feature. Got {f.name} of type {type(f)}'
                         )
                     else:
-                        out.append(fge[0])
+                        out.append((fge[0], fn[0]))
             else:
-                out.append(fg[0])
+                out.append((fg[0], None))
 
-        return list(set(out))
+        return out
 
     @property
     def num_threads(self):
@@ -571,8 +576,107 @@ class EnginePandasNumpy(EngineContext):
         return series
 
     @staticmethod
+    def _get_log_fn(f: FeatureNormalizeLogBase) -> Optional[Callable]:
+        if f.log_base is None:
+            return None
+        if f.log_base == 'e':
+            return np.log
+        elif f.log_base == '10':
+            return np.log10
+        elif f.log_base == '2':
+            return np.log2
+        else:
+            raise EnginePandaNumpyException(
+                f'Problem processing Normalizer feature {f.name}. ' +
+                f'Did not find function to calculated log-base {f.log_base}'
+            )
+
+    @staticmethod
+    def _normalize_frequency_std(
+            freq: np.ndarray, fn: List[Tuple[FeatureNormalizeStandard, int]],
+            log_fn: Optional[Callable], inference: bool):
+
+        ind = [i for _, i in fn]
+        if len(ind) == 0:
+            return
+
+        # Deltas to add per feature if log transform is used
+        deltas = np.array([f.delta for f, _ in fn])
+
+        if not inference:
+            if log_fn is None:
+                mean = freq[:, :, ind].mean(axis=(0, 1))
+                stddev = freq[:, :, ind].std(axis=(0, 1))
+            else:
+                mean = log_fn((freq[:, :, ind]+deltas)).mean(axis=(0, 1))
+                stddev = log_fn((freq[:, :, ind]+deltas)).std(axis=(0, 1))
+            for i, (f, _) in enumerate(fn):
+                f.mean = mean[i].item()
+                f.stddev = stddev[i].item()
+            else:
+                mean = np.array([f.mean for f, _ in fn])
+                stddev = np.array([f.stddev for f, _ in fn])
+
+            if log_fn is None:
+                freq[:, :, ind] = ((freq[:, :, ind] - mean) / stddev)
+            else:
+                freq[:, :, ind] = ((log_fn(freq[:, :, ind]+deltas) - mean) / stddev)
+
+    @staticmethod
+    def _normalize_frequency_scale(
+            freq: np.ndarray, fn: List[Tuple[FeatureNormalizeScale, int]],
+            log_fn: Optional[Callable], inference: bool):
+
+        ind = [i for _, i in fn]
+        if len(ind) == 0:
+            return
+
+        # Deltas to add per feature if log transform is used
+        deltas = np.array([f.delta for f, _ in fn])
+
+        if not inference:
+            if log_fn is None:
+                mn = freq[:, :, ind].min(axis=(0, 1))
+                mx = freq[:, :, ind].max(axis=(0, 1))
+            else:
+                mn = log_fn(freq[:, :, ind].min(axis=(0, 1))+deltas)
+                mx = log_fn(freq[:, :, ind].max(axis=(0, 1))+deltas)
+            for i, (f, _) in enumerate(fn):
+                f.minimum = mn[i].item()
+                f.maximum = mx[i].item()
+        else:
+            mn = np.array([f.minimum for f, _ in fn])
+            mx = np.array([f.maximum for f, _ in fn])
+
+        if log_fn is None:
+            freq[:, :, ind] = ((freq[:, :, ind] - mn) / (mx - mn))
+        else:
+            freq[:, :, ind] = ((log_fn(freq[:, :, ind]+deltas) - mn) / (mx - mn))
+
+    @staticmethod
+    def _normalize_frequency(freq: np.ndarray, fn: List[Optional[FeatureNormalizeLogBase]], inference: bool) -> None:
+
+        fnl: Dict[Type[FeatureNormalizeLogBase], Callable] = {
+            FeatureNormalizeScale: EnginePandasNumpy._normalize_frequency_scale,
+            FeatureNormalizeStandard: EnginePandasNumpy._normalize_frequency_std
+        }
+
+        if freq.shape[2] != len(fn):
+            raise EnginePandaNumpyException(
+                f'Problem normalizing frequency. Frequency number of features is {freq.shape[2]}. Number of ' +
+                f'Normalizers is {len(fn)}. Normalizer Features list {fn}'
+            )
+
+        ur = list(set([(type(f), EnginePandasNumpy._get_log_fn(f)) for f in fn if f is not None]))
+        for t, lb in ur:
+            nl: List[Tuple[FeatureNormalize, int]] = [(f, fn.index(f)) for f in fn if isinstance(f, t)]
+            func = fnl[t]
+            func(freq, nl, lb, inference)
+
+    @staticmethod
     def _process_key_frequencies(rows: pd.DataFrame, time_feature: Feature,
-                                 time_dict: Dict[Tuple[TimePeriod, int], List[FeatureGrouper]],
+                                 time_dict: Dict[Tuple[TimePeriod, int],
+                                                 List[Tuple[FeatureGrouper, Optional[FeatureNormalize]]]],
                                  ) -> Tuple[pd.Index, List[np.ndarray]]:
 
         # Keep the original index, we need that to restore the order.
@@ -584,33 +688,30 @@ class EnginePandasNumpy(EngineContext):
         out = [np.zeros((rows.shape[0], tw,  len(fts))) for (_, tw), fts in time_dict.items()]
         prev_datetime = rows.iloc[0][time_feature.name]
 
-        p = ProfileNative([f for _, fts in time_dict.items() for f in fts])
-
+        p = ProfileNumpy([f for _, fts in time_dict.items() for f, _ in fts])
         # The profile will return a flat list of all aggregators across time-periods/windows.
         # But we will need to create a numpy array per unique time-period/window.
         # The indexes will keep track of which output of the profile goes to which numpy array
-        indexes = [0] + [len(fts) for (_, _), fts in time_dict.items()]
+        indexes = [0] + [len(fts) for _, fts in time_dict.items()]
         for i in range(1, len(indexes)):
             indexes[i] = indexes[i] + indexes[i-1]
 
         base_names = [f.name for f in p.base_features]
         filter_names = [f.name for f in p.filter_features]
-        dimension_names = [f.name for f in p.dimension_features]
 
-        for i, (a, t, f, d) in enumerate(zip(rows[base_names].to_numpy(),
-                                             rows[time_feature.name],
-                                             rows[filter_names].to_numpy(),
-                                             rows[dimension_names].to_numpy())):
+        for i, (a, t, f) in enumerate(zip(rows[base_names].to_numpy(),
+                                          rows[time_feature.name],
+                                          rows[filter_names].to_numpy())):
             if i > 0:
                 # Always start where the previous row stopped.
                 for e in out:
                     e[i] = e[i-1]
-            c = (a.tolist(), t, [] if len(f) == 0 else f.tolist(), [] if len(d) == 0 else d.tolist())
-            p.contribute(c)
-            r = p.list(c)
+            tm = t.to_pydatetime()
+            p.contribute((a, tm, f))
+            r = p.list(tm)
             for j, ((tp, _), _) in enumerate(time_dict.items()):
                 # Run Time-logic, see if the last values have to be shifted up.
-                delta = tp.delta_between(prev_datetime, t)
+                delta = tp.delta_between(tp.start_period(prev_datetime), tp.start_period(t))
                 if delta > 0:
                     # take the current row, all features, pad the time dimension with 'delta' zero's.
                     # Which will make the array bigger in the time dimension so slice the added delta away.
@@ -648,27 +749,35 @@ class EnginePandasNumpy(EngineContext):
         @return : NumpyList Object. It will contain one list per unique time_window/time_period found in the of the
         FeatureGroupers. The rank of each numpy array will be 3 (BatchSize x TimeWindow x #Features)
         """
-        gf = self._val_grouper_based(target_tensor_def)
+        gnf: List[Tuple[FeatureGrouper, Optional[FeatureNormalize]]] = self._val_grouper_based(target_tensor_def)
         # Group per Group feature. i.e. per key.
-        group_dict: Dict[Feature, Dict[Tuple[TimePeriod, int], List[FeatureGrouper]]] = OrderedDict(
-            sorted([
-                (g, OrderedDict(
-                    sorted([
-                        (k, sorted(list(v), key=lambda x:x))
-                        for k, v in groupby(gf, lambda x: (x.time_period, x.time_window))
-                    ], key=lambda x: x[0])
-                )) for g, gf in groupby(gf, lambda x: x.group_feature)
-            ], key=lambda x: x[0])
+        # Also override the time window to 1.
+        # We can do this because we really only need to ever keep 1 time period. We store the rest in the frequency
+        # time dimension.
+        group_dict: Dict[Feature,
+                         Dict[Tuple[TimePeriod, int],
+                              List[Tuple[FeatureGrouper, Optional[FeatureNormalize]]]]] = OrderedDict(
+            (g, OrderedDict(
+                (tpw, sorted([
+                    (FeatureGrouper(
+                        fg.name, fg.type, fg.base_feature, fg.group_feature, fg.filter_feature,
+                        fg.time_period, 1, fg.aggregator), fn) for fg, fn in fl
+                ], key=lambda x: x[0])) for tpw, fl in groupby(
+                    sorted(gf, key=lambda x: (x[0].time_period, x[0].time_window)),
+                    lambda x: (x[0].time_period, x[0].time_window)
+                )
+            )) for g, gf in groupby(sorted(gnf, key=lambda x: x[0].group_feature), lambda x: x[0].group_feature)
         )
         # Create an 'unstacked' dataframe of the features. Do this first so it is ready for inference.
         f_features = target_tensor_def.embedded_features
+        f_features = FeatureHelper.filter_not_feature(FeatureNormalize, f_features)
         f_features = FeatureHelper.filter_not_feature(FeatureGrouper, f_features)
         f_features.extend([key_feature, time_feature])
-        td = TensorDefinition('InternalFrequenciesKeyTime', list(set(f_features)))
-        df = self.from_csv(td, file, delimiter, quote, inference=inference)
+        tdf = TensorDefinition('InternalFrequenciesKeyTime', list(set(f_features)))
+        df = self.from_csv(tdf, file, delimiter, quote, inference=inference)
 
-        # Placeholder for the output
-        series_out = None
+        # Dictionary to keep the numpy arrays per time period/window
+        series_dict: [Dict[Tuple[TimePeriod, int], np.ndarray]] = {}
 
         for g, td in group_dict.items():
             logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
@@ -679,7 +788,6 @@ class EnginePandasNumpy(EngineContext):
                 time_feature=time_feature,
                 time_dict=td
             )
-
             # This will a List[Tuple[pd.Index,List[np.ndarray]]. There will be an entry in the main list per unique
             # group value.
             # The index will return the original index, which we need to restore.
@@ -688,19 +796,32 @@ class EnginePandasNumpy(EngineContext):
                 series = p.map(key_function, [rows for _, rows in df.groupby(g.name)])
 
             # Flatten index lists, we will get one long list across all group values.
-            index = [i for ind, _ in series for i in ind]
+            index = np.concatenate([ind.to_numpy() for ind, _ in series])
             # Complex stuff to make one long numpy across all group values per each unique TimePeriod/TimeWindow combo
             series = [lst for _, lst in series]
             series = [np.concatenate([e[i] for e in series], axis=0) for i in range(len(series[0]))]
-            # Getting an array by index effectively sorts it, so this restores the order of the original df
-            series = [a[index] for a in series]
-            if series_out is None:
-                series_out = series
-            else:
-                series_out = series_out + series
+            # Getting an array by the arg-sorted index effectively sorts it, this restores the order of the original df
+            series = [a[index.argsort()] for a in series]
+
+            # Concatenate the series with the same Time window/Time period
+            for i, tpw in enumerate(td):
+                try:
+                    n = series_dict[tpw]
+                    series_dict[tpw] = np.concatenate((n, series[i]), axis=2)
+                except KeyError:
+                    series_dict[tpw] = series[i]
+
+        # Normalize the frequencies
+        for i, (tpw, a) in enumerate(series_dict.items()):
+            fn = [
+                n for td in group_dict.values()
+                for ipw, fl in td.items() if ipw == tpw
+                for _, n in fl
+            ]
+            self._normalize_frequency(a, fn, inference)
 
         # Turn it into a NumpyList
-        return NumpyList(series_out)
+        return NumpyList([n for _, n in series_dict.items()])
 
 
 class _FeatureProcessor:
@@ -781,23 +902,23 @@ class _FeatureProcessor:
             if isinstance(feature, FeatureNormalizeScale):
                 log_fn = _FeatureProcessor._get_log_fn(feature)
                 if not inference:
-                    feature.minimum = df[bfn].min() if log_fn is None else log_fn(df[bfn].min())
-                    feature.maximum = df[bfn].max() if log_fn is None else log_fn(df[bfn].max())
+                    feature.minimum = df[bfn].min() if log_fn is None else log_fn(df[bfn].min()+feature.delta)
+                    feature.maximum = df[bfn].max() if log_fn is None else log_fn(df[bfn].max()+feature.delta)
                 logger.info(f'Create {fn} Normalize/Scale {bfn}. Min. {feature.minimum:.2f} Max. {feature.maximum:.2f}')
                 if log_fn is None:
                     kwargs[fn] = (df[bfn] - feature.minimum) / (feature.maximum - feature.minimum)
                 else:
-                    kwargs[fn] = (log_fn(df[bfn]) - feature.minimum) / (feature.maximum - feature.minimum)
+                    kwargs[fn] = (log_fn(df[bfn]+feature.delta) - feature.minimum) / (feature.maximum - feature.minimum)
             elif isinstance(feature, FeatureNormalizeStandard):
                 log_fn = _FeatureProcessor._get_log_fn(feature)
                 if not inference:
-                    feature.mean = df[bfn].mean() if log_fn is None else log_fn(df[bfn]).mean()
-                    feature.stddev = df[bfn].std() if log_fn is None else log_fn(df[bfn]).std()
+                    feature.mean = df[bfn].mean() if log_fn is None else log_fn(df[bfn]+feature.delta).mean()
+                    feature.stddev = df[bfn].std() if log_fn is None else log_fn(df[bfn]+feature.delta).std()
                 logger.info(f'Create {fn} Normalize/Standard {bfn}. Mean {feature.mean:.2f} Std {feature.stddev:.2f}')
                 if log_fn is None:
                     kwargs[fn] = (df[bfn] - feature.mean) / feature.stddev
                 else:
-                    kwargs[fn] = (log_fn(df[bfn]) - feature.mean) / feature.stddev
+                    kwargs[fn] = (log_fn(df[bfn]+feature.delta) - feature.mean) / feature.stddev
             else:
                 raise EnginePandaNumpyException(
                     f'Unknown feature normaliser type {feature.__class__.name}')
@@ -974,17 +1095,15 @@ class _FeatureProcessor:
                              time_feature: Feature) -> pd.DataFrame:
         rows.sort_values(by=time_feature.name, ascending=True, inplace=True)
         out = np.zeros((len(rows), len(group_features)))
-        p = ProfileNative(group_features)
+        p = ProfileNumpy(group_features)
         base_names = [f.name for f in p.base_features]
         filter_names = [f.name for f in p.filter_features]
-        dimension_names = [f.name for f in p.dimension_features]
-        for i, (a, t, f, d) in enumerate(zip(rows[base_names].to_numpy(),
-                                             rows[time_feature.name],
-                                             rows[filter_names].to_numpy(),
-                                             rows[dimension_names].to_numpy())):
-            c = (a.tolist(), t, [] if len(f) == 0 else f.tolist(), [] if len(d) == 0 else d.tolist())
-            p.contribute(c)
-            out[i, :] = p.list(c)
+        for i, (a, t, f) in enumerate(zip(rows[base_names].to_numpy(),
+                                          rows[time_feature.name],
+                                          rows[filter_names].to_numpy())):
+            tm = t.to_pydatetime()
+            p.contribute((a, tm, f))
+            out[i, :] = p.list(tm)
         ags = pd.DataFrame(out, index=rows.index, columns=[f.name for f in group_features])
         return pd.concat([rows, ags], axis=1)
 
