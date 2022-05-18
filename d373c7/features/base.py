@@ -152,7 +152,7 @@ class FeatureRatio(FeatureWithBaseFeature):
 
 
 @enforce_types
-@dataclass(unsafe_hash=True)
+@dataclass(unsafe_hash=True, order=True)
 class FeatureConcat(FeatureWithBaseFeature):
     """
     Feature to concatenate 2 features. Both feature must be string type, the result will be a string

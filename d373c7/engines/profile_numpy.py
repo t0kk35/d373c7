@@ -41,10 +41,10 @@ class ProfileElementNumpy(ProfileElement[Tuple[np.ndarray, dt.datetime, np.ndarr
             (tp, [idx for idx, (utp, _, _) in enumerate(u_tp_ff_bf) if utp == tp])
             for tp in list(set([tp for _, tp, _, _ in tw_tp_ff_bf]))
         ]
-        self._bf_index: List[Tuple[int, List[int]]] = [
-            (ProfileFieldNumpy.find_index(bf, base_order), [
-                idx for idx, (_, _, ufb) in enumerate(u_tp_ff_bf) if ufb == bf
-            ])
+        self._bf_index: List[Tuple[int, np.ndarray]] = [
+            (ProfileFieldNumpy.find_index(bf, base_order),
+             np.isin(np.arange(self._array.shape[0]), [idx for idx, (_, _, ufb) in enumerate(u_tp_ff_bf) if ufb == bf])
+             )
             for bf in list(set([bf for _, _, _, bf in tw_tp_ff_bf]))
         ]
         self._feature_index: List[int] = [
@@ -75,32 +75,26 @@ class ProfileElementNumpy(ProfileElement[Tuple[np.ndarray, dt.datetime, np.ndarr
         )
 
     def contribute(self, contribution: Tuple[np.ndarray, dt.datetime, np.ndarray]):
-        for bfi, ind in self._bf_index:
-            flt_b = np.isin(np.arange(self._array.shape[0]), ind)
-            # Select the last row of the time dimension (current timeperiod)
-            # And make sure to only update entries where the filter is true or undefined.
-            flt_f = np.array([1 if i == -1 else contribution[2][i] for i in self._filter_order_index]).astype(bool)
-            flt = flt_b & flt_f
+        # Make sure to only update entries where the filter is true or undefined.
+        flt_f = np.array([1 if i == -1 else contribution[2][i] for i in self._filter_order_index]).astype(bool)
+
+        for bfi, flt_i in self._bf_index:
+            flt = flt_i & flt_f
+            c = np.array(contribution[0][bfi])
             # Add one to count
             self._array[flt, -1:, self.count_index] += 1
             # Calculate delta
-            delta = contribution[0][bfi] - self._array[flt, -1:, self.mean_index]
+            delta = c - self._array[flt, -1:, self.mean_index]
             # Assign mean and M2
             self._array[flt, -1:, self.mean_index] += delta / self._array[flt, -1:, self.count_index]
-            self._array[flt, -1:, self.m2_index] += delta * (
-                    contribution[0][bfi] - self._array[flt, -1:, self.mean_index]
-            )
+            self._array[flt, -1:, self.m2_index] += delta * (c - self._array[flt, -1:, self.mean_index])
             # If count == 1, take contribution, else minimum of current minimum and contribution
             count_1_and_flt = np.squeeze(self._array[:, -1:, self.count_index] == 1) & flt
-            count_n_1_and_flt = np.squeeze(self._array[:, -1:, self.count_index] > 1) & flt
-            self._array[:, -1:, self.min_index][count_1_and_flt] = contribution[0][bfi]
-            self._array[:, -1:, self.min_index][count_n_1_and_flt] = np.minimum(
-                self._array[:, -1:, self.min_index], contribution[0][bfi]
-            )[count_n_1_and_flt]
+            if np.any(count_1_and_flt):
+                self._array[count_1_and_flt, -1:, self.min_index] = c
+            self._array[flt, -1:, self.min_index] = np.minimum(self._array[flt, -1:, self.min_index], c)
             # New max is max of previous max and contribution.
-            self._array[flt, -1:, self.max_index] = np.maximum(
-                self._array[flt, -1:, self.max_index], contribution[0][bfi]
-            )
+            self._array[flt, -1:, self.max_index] = np.maximum(self._array[flt, -1:, self.max_index], c)
 
     def aggregate(self, feature: Optional[FeatureGrouper]) -> np.ndarray:
         return np.array(
@@ -115,9 +109,14 @@ class ProfileElementNumpy(ProfileElement[Tuple[np.ndarray, dt.datetime, np.ndarr
             delta = tp.delta_between(tp.start_period(previous_time), tp.start_period(current_time))
             # If there is a delta shift up the time.
             if delta > 0:
-                self._array[ind] = np.pad(
-                    self._array[ind], ((0, 0), (0, delta), (0, 0)), mode='constant'
-                )[:, delta:]
+                # self._array[ind] = np.pad(
+                #     self._array[ind], ((0, 0), (0, delta), (0, 0)), mode='constant'
+                # )[:, delta:]
+                res = np.zeros_like(self._array[ind])
+                top = res.shape[1] - delta
+                if top > 0:
+                    res[:, :top] = self._array[ind, -top:]
+                self._array[ind] = res
 
     @property
     def array(self) -> np.ndarray:
@@ -187,7 +186,7 @@ class ProfileAggregatorHelper:
 
     @staticmethod
     def _min(pe: ProfileElementNumpy, ind: int, time_window: int) -> float:
-        # Only take row with an actual count into consideration
+        # Only take time-elements (2nd dimension) with an actual count into consideration
         r = pe.array[ind, pe.array[ind, :, ProfileElementNumpy.count_index] > 0]
         # Now select the timeperiod, only the min_index and take the actual min
         return np.min(r[-(min(time_window, r.shape[0])), ProfileElementNumpy.min_index])

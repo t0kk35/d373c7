@@ -1053,10 +1053,11 @@ class _FeatureProcessor:
     def _process_concat_features(df: pd.DataFrame, features: List[FeatureConcat]):
         if len(features) == 0:
             return df
-        # Do all concatenations in one go using assign
+        # Do all concatenations in one go using assign. Cast to string. If the feature is a category that is needed
         kwargs = {}
         for feature in features:
-            kwargs[feature.name] = df[feature.base_feature.name] + df[feature.concat_feature.name]
+            kwargs[feature.name] = df[feature.base_feature.name].astype(str) + \
+                                   df[feature.concat_feature.name].astype(str)
         # Apply concatenations
         df = df.assign(**kwargs)
         return df
@@ -1069,9 +1070,10 @@ class _FeatureProcessor:
         # Group per Group feature. i.e. per key.
         group_dict: Dict[Feature, List[FeatureGrouper]] = OrderedDict(
             sorted([
-                (g, list(gf)) for g, gf in groupby(features, lambda x: x.group_feature)
+                (g, list(gf)) for g, gf in groupby(
+                    sorted(features, key=lambda x: x.group_feature), lambda x: x.group_feature
+                )
             ], key=lambda x: x[0]))
-
         for g, gf in group_dict.items():
             logger.info(f'Start creating aggregate grouper feature for <{g.name}> ' +
                         f'using {num_threads} process(es)')
@@ -1104,7 +1106,11 @@ class _FeatureProcessor:
             tm = t.to_pydatetime()
             p.contribute((a, tm, f))
             out[i, :] = p.list(tm)
-        ags = pd.DataFrame(out, index=rows.index, columns=[f.name for f in group_features])
+
+        ags = pd.DataFrame(
+            {f.name: pd.Series(np.squeeze(out[:, i]), index=rows.index).astype(EnginePandasNumpy.panda_type(f))
+             for i, f in enumerate(group_features)}
+        )
         return pd.concat([rows, ags], axis=1)
 
     @classmethod

@@ -529,7 +529,7 @@ class TestFeatureConcat(unittest.TestCase):
         with en.EnginePandasNumpy() as e:
             td = ft.TensorDefinition('All', [fc, fm, fn])
             df = e.from_csv(td, file, inference=False)
-            df['concat-1'] = df[fc.name] + df[fm.name]
+            df['concat-1'] = df[fc.name].astype(str) + df[fm.name].astype(str)
             self.assertTrue(df[fn.name].equals(df['concat-1']), f'Concat columns not equal')
 
     def test_multiple_concat(self):
@@ -544,8 +544,8 @@ class TestFeatureConcat(unittest.TestCase):
         with en.EnginePandasNumpy() as e:
             td = ft.TensorDefinition('All', [fc, fm, fr, fn1, fn2])
             df = e.from_csv(td, file, inference=False)
-            df['concat-1'] = df[fc.name] + df[fm.name]
-            df['concat-2'] = df[fr.name] + df[fr.name]
+            df['concat-1'] = df[fc.name].astype(str) + df[fm.name].astype(str)
+            df['concat-2'] = df[fr.name].astype(str) + df[fr.name].astype(str)
             self.assertTrue(df[fn1.name].equals(df['concat-1']), f'Concat columns not equal')
             self.assertTrue(df[fn2.name].equals(df['concat-2']), f'Concat columns not equal')
 
@@ -785,6 +785,10 @@ class TestGrouperFeature(unittest.TestCase):
         for grouper_name, _, _ in feature_def:
             self.assertIn(grouper_name, df.columns, f'The aggregated feature {grouper_name} not found in Pandas')
 
+        # Check that all types are correct. They should all have been created as float 32
+        for f in group_features:
+            self.assertEqual(df[f.name].dtype.name, 'float32', f'Type not FP32 for {df[f.name]}, {df[f.name].dtype}')
+
         # Check the aggregates. Iterate over the Card-id (the key) and check each aggregate
         for c in df[fr.name].unique():
             prev_dt = None
@@ -813,7 +817,7 @@ class TestGrouperFeature(unittest.TestCase):
                     prev_dt = row[fd.name]
 
     def test_grouped_multiple_groups(self):
-        # Base test. Create single aggregate daily sum on card
+        # Base test. Create single all aggregates on 2 groups
         file = FILES_DIR + 'engine_test_base_comma.csv'
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
@@ -821,15 +825,47 @@ class TestGrouperFeature(unittest.TestCase):
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         ff = ft.FeatureSource('Fraud', ft.FEATURE_TYPE_FLOAT_32)
         td1 = ft.TensorDefinition('Source', [fd, fr, fc, fa, ff])
-        fg_1 = ft.FeatureGrouper(
+        fga_1 = ft.FeatureGrouper(
             'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
         )
-        fg_2 = ft.FeatureGrouper(
+        fga_2 = ft.FeatureGrouper(
+            'card_2d_count', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_COUNT
+        )
+        fga_3 = ft.FeatureGrouper(
+            'card_2d_avg', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_AVG
+        )
+        fga_4 = ft.FeatureGrouper(
+            'card_2d_std', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_STDDEV
+        )
+        fga_5 = ft.FeatureGrouper(
+            'card_2d_min', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_MIN
+        )
+        fga_6 = ft.FeatureGrouper(
+            'card_2d_max', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_MAX
+        )
+        fgc_1 = ft.FeatureGrouper(
             'country_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_SUM
         )
-        td2 = ft.TensorDefinition('Derived', [fg_1])
-        td3 = ft.TensorDefinition('Derived', [fg_2])
-        td4 = ft.TensorDefinition('Derived', [fg_1, fg_2])
+        fgc_2 = ft.FeatureGrouper(
+            'country_2d_count', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_COUNT
+        )
+        fgc_3 = ft.FeatureGrouper(
+            'country_2d_avg', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_AVG
+        )
+        fgc_4 = ft.FeatureGrouper(
+            'country_2d_std', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_STDDEV
+        )
+        fgc_5 = ft.FeatureGrouper(
+            'country_2d_min', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_MIN
+        )
+        fgc_6 = ft.FeatureGrouper(
+            'country_2d_max', ft.FEATURE_TYPE_FLOAT_32, fa, fc, None, ft.TIME_PERIOD_DAY, 2, ft.AGGREGATOR_MAX
+        )
+
+        td2 = ft.TensorDefinition('Derived', [fga_1, fga_2, fga_3, fga_4, fga_5, fga_6])
+        td3 = ft.TensorDefinition('Derived', [fgc_1, fgc_2, fgc_3, fgc_4, fgc_5, fgc_6])
+        td4 = ft.TensorDefinition('Derived', [fga_1, fga_2, fga_3, fga_4, fga_5, fga_6,
+                                              fgc_1, fgc_2, fgc_3, fgc_4, fgc_5, fgc_6])
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
             df_card = e.from_df(td2, df, td1, inference=False, time_feature=fd)
