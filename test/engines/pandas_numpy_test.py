@@ -987,6 +987,27 @@ class TestBuildEmbedded(unittest.TestCase):
 
 
 class TestSeriesFrequencies(unittest.TestCase):
+    # Not good if not all features have the same type.
+    def test_not_all_same_type(self):
+        file = FILES_DIR + 'engine_test_freq_comma.csv'
+        fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
+        fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
+        fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
+        tp = ft.TIME_PERIOD_DAY
+        freq = 3
+        td1 = ft.TensorDefinition('Base', [fd, fr, fa])
+        fg_1 = ft.FeatureGrouper(
+            'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM
+        )
+        # This is a float64, the previous a float32
+        fg_2 = ft.FeatureGrouper(
+            'card_2d_count', ft.FEATURE_TYPE_FLOAT, fa, fr, None, tp, freq, ft.AGGREGATOR_COUNT
+        )
+        td2 = ft.TensorDefinition('Frequencies', [fg_1, fg_2])
+        with en.EnginePandasNumpy() as e:
+            with self.assertRaises(en.EnginePandaNumpyException):
+                _ = e.to_series_frequencies(td2, file, fd, inference=False)
+
     # Run some base day tests
     def test_create_base_day(self):
         file = FILES_DIR + 'engine_test_freq_comma.csv'
@@ -1006,7 +1027,7 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create a single numpy with size (Batch x freq x 2)
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
             self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain a single array')
             self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a numpy array return. Got {type(n.lists)}')
@@ -1049,7 +1070,7 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create a single numpy with size (Batch x freq x 2)
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
             self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain a single array')
             self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a numpy array return. Got {type(n.lists)}')
@@ -1095,7 +1116,7 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create a single numpy with size (Batch x freq x 2)
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
             self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain a single array')
             self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a numpy array return. Got {type(n.lists)}')
@@ -1146,7 +1167,7 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create a single numpy with size (Batch x freq x 2)
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
             self.assertEqual(len(n.lists), 3, f'Expected the NumpyList to contain 3 arrays')
             self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a list 0 numpy array return. Got {type(n.lists)}')
@@ -1201,7 +1222,7 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create 1 numpy arrays with size (Batch x freq x 2)
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
             self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain 1 arrays')
             self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a list 0 numpy array return. Got {type(n.lists)}')
@@ -1252,7 +1273,7 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create 1 numpy arrays with size (Batch x freq x 2). One for each group
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             self.assertEqual(type(n), en.NumpyList, f'expected a return of Numpy List. Got {type(n)} ')
             self.assertEqual(len(n.lists), 1, f'Expected the NumpyList to contain 1 arrays')
             self.assertEqual(type(n.lists[0]), np.ndarray, f'Expected a list 0 numpy array return. Got {type(n.lists)}')
@@ -1296,11 +1317,11 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create 1 numpy arrays with size (Batch x freq x 1). One for each group
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             mn = np.min(n.lists[0], axis=(0, 1))
             mx = np.max(n.lists[0], axis=(0, 1))
             self.assertFalse(td3.inference_ready, f'Should not be inference ready before series build')
-            nn = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            nn = e.to_series_frequencies(td3, file, fd, inference=False)
             self.assertTrue(td3.inference_ready, f'Should have been inference ready after series build')
             self.assertEqual(type(nn), en.NumpyList, f'expected a return of Numpy List. Got {type(nn)} ')
             self.assertEqual(len(nn.lists), 1, f'Expected the NumpyList to contain 1 arrays')
@@ -1318,22 +1339,22 @@ class TestSeriesFrequencies(unittest.TestCase):
         file = FILES_DIR + 'engine_test_freq_comma.csv'
         freq = 5
         s_name = 'scale_log'
-        s_type = ft.FEATURE_TYPE_FLOAT_32
+        s_type = ft.FEATURE_TYPE_FLOAT
         tp = ft.TIME_PERIOD_DAY
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
-        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', s_type, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
         for log, log_fn in (('e', np.log), ('2', np.log2), ('10', np.log10)):
             fs = ft.FeatureNormalizeScale(s_name, s_type, fg_1, log)
             with en.EnginePandasNumpy() as e:
                 td_df = ft.TensorDefinition('All', [fg_1])
-                na = e.to_series_frequencies(td_df, file, fr, fd, inference=False)
+                na = e.to_series_frequencies(td_df, file, fd, inference=False)
                 self.assertEqual(len(na.lists), 1, f'Expected to get 1 list, got {len(na.lists)}')
                 mn = log_fn(na.lists[0]+fs.delta).min(axis=(0, 1))
                 mx = log_fn(na.lists[0]+fs.delta).max(axis=(0, 1))
                 td2 = ft.TensorDefinition('Derived', [fs])
-                nas = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+                nas = e.to_series_frequencies(td2, file, fd, inference=False)
                 self.assertTrue(td2.inference_ready, f'Should have been inference ready after series build')
                 self.assertEqual(type(nas), en.NumpyList, f'expected a return of Numpy List. Got {type(nas)} ')
                 self.assertEqual(len(nas.lists), 1, f'Expected the NumpyList to contain 1 arrays')
@@ -1364,11 +1385,11 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create 1 numpy arrays with size (Batch x freq x 1). One for each group
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             mn = np.mean(n.lists[0], axis=(0, 1))
             st = np.std(n.lists[0], axis=(0, 1))
             self.assertFalse(td3.inference_ready, f'Should not be inference ready before series build')
-            nn = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            nn = e.to_series_frequencies(td3, file, fd, inference=False)
             self.assertTrue(td3.inference_ready, f'Should have been inference ready after series build')
             self.assertEqual(type(nn), en.NumpyList, f'expected a return of Numpy List. Got {type(nn)} ')
             self.assertEqual(len(nn.lists), 1, f'Expected the NumpyList to contain 1 arrays')
@@ -1386,22 +1407,22 @@ class TestSeriesFrequencies(unittest.TestCase):
         file = FILES_DIR + 'engine_test_freq_comma.csv'
         freq = 5
         s_name = 'standard_log'
-        s_type = ft.FEATURE_TYPE_FLOAT_32
+        s_type = ft.FEATURE_TYPE_FLOAT
         tp = ft.TIME_PERIOD_DAY
         fd = ft.FeatureSource('Date', ft.FEATURE_TYPE_DATE, format_code='%Y%m%d')
         fr = ft.FeatureSource('Card', ft.FEATURE_TYPE_STRING)
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
-        fg_1 = ft.FeatureGrouper('crd_5d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
+        fg_1 = ft.FeatureGrouper('crd_5d_sum', s_type, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM)
         for log, log_fn in (('e', np.log), ('2', np.log2), ('10', np.log10)):
             fs = ft.FeatureNormalizeStandard(s_name, s_type, fg_1, log)
             with en.EnginePandasNumpy() as e:
                 td_df = ft.TensorDefinition('All', [fg_1])
-                na = e.to_series_frequencies(td_df, file, fr, fd, inference=False)
+                na = e.to_series_frequencies(td_df, file, fd, inference=False)
                 self.assertEqual(len(na.lists), 1, f'Expected to get 1 list, got {len(na.lists)}')
                 mn = log_fn(na.lists[0]+fs.delta).mean(axis=(0, 1))
                 st = log_fn(na.lists[0]+fs.delta).std(axis=(0, 1))
                 td2 = ft.TensorDefinition('Derived', [fs])
-                nas = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+                nas = e.to_series_frequencies(td2, file, fd, inference=False)
                 self.assertTrue(td2.inference_ready, f'Should have been inference ready after series build')
                 self.assertEqual(type(nas), en.NumpyList, f'expected a return of Numpy List. Got {type(nas)} ')
                 self.assertEqual(len(nas.lists), 1, f'Expected the NumpyList to contain 1 arrays')
@@ -1433,11 +1454,11 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 1 features this will create 1 numpy arrays with size (Batch x freq x 1). One for each group
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
             self.assertFalse(td3.inference_ready, f'Should not be inference ready before series build')
-            nst = e.to_series_frequencies(td3, file, fr, fd, inference=False)
-            nsc = e.to_series_frequencies(td4, file, fr, fd, inference=False)
-            nsa = e.to_series_frequencies(td5, file, fr, fd, inference=False)
+            nst = e.to_series_frequencies(td3, file, fd, inference=False)
+            nsc = e.to_series_frequencies(td4, file, fd, inference=False)
+            nsa = e.to_series_frequencies(td5, file, fd, inference=False)
             self.assertTrue(td5.inference_ready, f'Should have been inference ready after series build')
             self.assertEqual(type(nsa), en.NumpyList, f'expected a return of Numpy List. Got {type(nsa)} ')
             self.assertEqual(len(nsa.lists), 1, f'Expected the NumpyList to contain 1 arrays')
@@ -1472,8 +1493,8 @@ class TestSeriesFrequencies(unittest.TestCase):
         # Note that in the Frequency the output is ordered. So fg_2, the 5 time period will come first
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
-            nn = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
+            nn = e.to_series_frequencies(td3, file, fd, inference=False)
             mn5 = np.mean(n.lists[0], axis=(0, 1))
             st5 = np.std(n.lists[0], axis=(0, 1))
             mn10 = np.min(n.lists[1], axis=(0, 1))
@@ -1526,8 +1547,8 @@ class TestSeriesFrequencies(unittest.TestCase):
         # With 2 features this will create 2 numpy array with size (Batch x freq x 1). One for each time period
         with en.EnginePandasNumpy() as e:
             df = e.from_csv(td1, file, inference=False)
-            n = e.to_series_frequencies(td2, file, fr, fd, inference=False)
-            nn = e.to_series_frequencies(td3, file, fr, fd, inference=False)
+            n = e.to_series_frequencies(td2, file, fd, inference=False)
+            nn = e.to_series_frequencies(td3, file, fd, inference=False)
             mnd = np.mean(n.lists[0], axis=(0, 1))
             std = np.std(n.lists[0], axis=(0, 1))
             mnw = np.min(n.lists[1], axis=(0, 1))

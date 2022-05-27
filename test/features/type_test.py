@@ -1,5 +1,5 @@
 """
-Unit Tests for Feature Type and Learning categories. Some of the base needed classes.
+Unit Tests for Feature Type and Learning categories. Some base classes.
 (c) 2020 d373c7
 """
 import unittest
