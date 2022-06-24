@@ -124,7 +124,7 @@ class ProfileNumpy:
         return list(dict.fromkeys(lst))
 
     @staticmethod
-    def get_deltas(df: pd.DataFrame, time_feature: Feature) -> np.ndarray:
+    def get_deltas(df: pd.DataFrame, time_feature: Feature, cumulative: bool = False) -> np.ndarray:
         """
         Helper method to get all the time deltas from between the rows. It is needed as input to some Numba
         jit-ed functions.
@@ -135,6 +135,7 @@ class ProfileNumpy:
         Args:
             df (pd.DataFrame): A Pandas dataframe that contains a time_feature
             time_feature (Feature): The time feature in the Pandas
+            cumulative (Bool): Set to True to return the cumulative delta's. Default is False
 
         Returns:
              A Numpy Array containing the deltas for all the TimePeriods.
@@ -152,14 +153,17 @@ class ProfileNumpy:
         # Day logic
         d = npd.astype('datetime64[D]')
         out[1:, 0] = d[1:] - d[:-1]
-        # Week logic. The first line set w to be dayofweek starting at Monday (yeah 1970 was a Thursday.... Don't ask)
+        # Week logic.  View - 4 sets the dayofweek starting at Monday (yeah 1/1/1970 was a Thursday.... Don't ask)
         w = d - ((d.view('int64') - 4) % 7)
         out[1:, 1] = (w[1:] - w[:-1]) // 7
         # Month logic
         m = npd.astype('datetime64[M]')
         out[1:, 2] = m[1:] - m[:-1]
 
-        return out
+        if cumulative:
+            return out.cumsum(axis=0)
+        else:
+            return out
 
     @staticmethod
     def _find_index(f: Feature, feature_list: List[Feature]) -> int:
@@ -184,7 +188,47 @@ class ProfileNumpy:
                 )
 
 
+class ProfileNumpyStore:
+    def __init__(self, grouper_features: List[FeatureGrouper], keys: np.ndarray):
+        self._val_all_same_group(grouper_features)
+        self._grouper_features = grouper_features
+        self._np_profile = ProfileNumpy(grouper_features)
+        self._np_grouper_store_shape = (keys.shape[0],) + self.profile.array_shape
+        self._keys = keys
+
+    @staticmethod
+    def _val_all_same_group(grouper_features: List[FeatureGrouper]):
+        gf = list(set([f.group_feature for f in grouper_features]))
+        if len(gf) > 1:
+            raise ProfileNumpyException(
+                f'All Grouper features in a store must have the same group_feature. Got {gf}'
+            )
+
+    def new_store_array(self) -> np.ndarray:
+        return np.zeros(self.store_shape)
+
+    @property
+    def grouper_features(self) -> List[FeatureGrouper]:
+        return self._grouper_features
+
+    @property
+    def profile(self) -> ProfileNumpy:
+        return self._np_profile
+
+    @property
+    def store_shape(self) -> Tuple[int, ...]:
+        return self._np_grouper_store_shape
+
+    @property
+    def keys(self) -> np.ndarray:
+        return self._keys
+
+    def key_sorter(self) -> np.ndarray:
+        return np.argsort(self.keys)
+
+
 # Some functions in the main body, these are numba jit-ed, as numba seems to not like class methods too much.
+# These are designed to operate on the profile
 @jit(nopython=True, cache=True)
 def profile_contrib(base_filters: np.ndarray, filter_index: np.ndarray, base_values: np.ndarray,
                     filter_values: np.ndarray, pe_array: np.ndarray) -> None:

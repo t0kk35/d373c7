@@ -13,6 +13,7 @@ import pandas as pd
 
 import d373c7.features as ft
 import d373c7.engines as en
+import d373c7.network as nw
 
 FILES_DIR = './files/'
 
@@ -995,11 +996,10 @@ class TestSeriesFrequencies(unittest.TestCase):
         fa = ft.FeatureSource('Amount', ft.FEATURE_TYPE_FLOAT_32)
         tp = ft.TIME_PERIOD_DAY
         freq = 3
-        td1 = ft.TensorDefinition('Base', [fd, fr, fa])
         fg_1 = ft.FeatureGrouper(
             'card_2d_sum', ft.FEATURE_TYPE_FLOAT_32, fa, fr, None, tp, freq, ft.AGGREGATOR_SUM
         )
-        # This is a float64, the previous a float32
+        # This is a float64, the previous a float32, we can not make a single array out of that
         fg_2 = ft.FeatureGrouper(
             'card_2d_count', ft.FEATURE_TYPE_FLOAT, fa, fr, None, tp, freq, ft.AGGREGATOR_COUNT
         )
@@ -1579,6 +1579,28 @@ class TestSeriesFrequencies(unittest.TestCase):
             self.assertEqual(fg_3.maximum, mxw.item(), f'Maximum not set correctly {fg_3.maximum} {mxw.item()}')
             nr = (n.lists[1] - mnw.item()) / (mxw.item() - mnw.item())
             self.assertTrue(np.array_equal(nn.lists[1], nr), f'Calculated array should equal to frequency')
+
+
+class TestNetEgoNetworks(unittest.TestCase):
+    def test_creation(self):
+        n_file = FILES_DIR + 'base_nodes.csv'
+        e_file = FILES_DIR + 'base_edges.csv'
+        n_id = ft.FeatureSource('node-id', ft.FEATURE_TYPE_INT_32)
+        td_n = ft.TensorDefinition('Nodes', [n_id])
+        e_id = ft.FeatureSource('edge-id', ft.FEATURE_TYPE_INT_32)
+        e_from_node_id = ft.FeatureSource('from-node-id', ft.FEATURE_TYPE_INT_32)
+        e_to_node_id = ft.FeatureSource('to-node-id', ft.FEATURE_TYPE_INT_32)
+        td_e = ft.TensorDefinition('Edges', [e_id, e_from_node_id, e_to_node_id])
+        with en.EnginePandasNumpy() as e:
+            df_n = e.from_csv(td_n, n_file, inference=False)
+            df_e = e.from_csv(td_e, e_file, inference=False)
+        nn = nw.NetworkNodeDefinitionPandas('node', n_id, td_n, df_n)
+        eg = nw.NetworkEdgeDefinitionPandas('edge', e_id, nn, e_from_node_id, nn, e_to_node_id, td_e, df_e)
+        n = nw.NetworkDefinitionPandas('network')
+        n.add_node_definition(nn)
+        n.add_edge_definition(eg)
+        with en.EnginePandasNumpy as e:
+            ego = e.to_networks(n, 2)
 
 
 def main():
