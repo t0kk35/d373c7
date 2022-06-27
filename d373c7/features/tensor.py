@@ -159,6 +159,23 @@ class TensorDefinition:
         return self._features_list
 
     @property
+    def feature_names(self) -> List[str]:
+        """
+        Helper function that returns the names of the feature in the TensorDefinition. If the feature is a
+        FeatureExpander, the expanded names of the Feature are returned.
+
+        Return:
+            The list names of the features included in this TensorDefinition
+        """
+        out = []
+        for f in self.features:
+            if isinstance(f, FeatureExpander):
+                out.extend(f.expand_names)
+            else:
+                out.append(f.name)
+        return out
+
+    @property
     def embedded_features(self) -> List[Feature]:
         """
         Function which returns all features embedded in the base features + the base features themselves. It effectively

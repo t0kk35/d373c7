@@ -46,15 +46,6 @@ class Trainer(_ModelManager):
         return r
 
     @staticmethod
-    def _remix(x: List[torch.Tensor], remix_alpha: float) -> List[torch.Tensor]:
-        # Create random Permutation index in range 0 -> length of the mini-batch.
-        idx = torch.randperm(x[0].shape[0])
-        # Create beta dist over shape of alpha and sample from it
-        mix = dist.Beta(remix_alpha+1, remix_alpha).sample_n(x[0].shape[0])
-        x = [(mix * t) + ((1 - mix) * t[idx]) for t in x]
-        return x
-
-    @staticmethod
     def _train_step(bar: tqdm, model: _Model, device: torch.device, train_dl: data.DataLoader,
                     loss_fn: _LossBase, optimizer: _Optimizer, history: _History, step_scheduler, remix_alpha: float):
         model.train()
