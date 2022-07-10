@@ -9,7 +9,8 @@ import datetime as dt
 import pandas as pd
 import numpy as np
 import multiprocessing as mp
-from numba import jit, prange
+import numba as nb
+from numba import jit
 from functools import partial
 from itertools import groupby
 from collections import OrderedDict
@@ -727,7 +728,7 @@ class EnginePandasNumpy(EngineContext):
             np.ones(len(rows), dtype=np.bool),
             rows[[f.name for f in p.base_features]].to_numpy(),
             rows[[f.name for f in p.filter_features]].to_numpy(),
-            p.get_deltas(rows, time_feature), p.base_filters, p.feature_filters, p.timeperiod_filters,
+            ProfileNumpy.get_deltas(rows, time_feature), p.base_filters, p.feature_filters, p.timeperiod_filters,
             p.aggregator_indexes, p.filter_indexes, list_ind, tp_ind, p.time_windows, p.array_shape,
             out_shapes, out_type
         )
@@ -824,7 +825,7 @@ class EnginePandasNumpy(EngineContext):
                     same_key.to_numpy(),
                     df[[f.name for f in p.base_features]].to_numpy(),
                     df[[f.name for f in p.filter_features]].to_numpy(),
-                    p.get_deltas(df, time_feature), p.base_filters, p.feature_filters, p.timeperiod_filters,
+                    ProfileNumpy.get_deltas(df, time_feature), p.base_filters, p.feature_filters, p.timeperiod_filters,
                     p.aggregator_indexes, p.filter_indexes, list_ind, tp_ind, p.time_windows, p.array_shape,
                     out_shapes, out_type
                 )
@@ -881,18 +882,42 @@ class EnginePandasNumpy(EngineContext):
     def to_networks_ego(self, network: NetworkDefinitionPandas, time_feature: Feature,
                         node_tensor_definition: List[TensorDefinition],
                         hops: int) -> Tuple[List[np.ndarray], ...]:
+        # check only binary or continuous node properties
+        # check all feature types are the same per node.
+        # Check only continuous edge properties
+        # check if time_feature is in the edge list
         #self._val_all_network_dfs_same_length(network)
-        # Select the node properties, we do not need the id.
-        node_pr_names = [
-            [f.name for f in n.tensor_definition.features if f != n.id_feature] for n in network.node_definition_list
-        ]
-        node_id_names = [
-            n.id_feature.name for n in network.node_definition_list
-        ]
-        node_pr = tuple([n.node_list[pr].to_numpy() for n, pr in zip(network.node_definition_list, node_pr_names)])
+        # Select the node property names, we do not want the id in this list
+        node_pr_names = [nd.tensor_definition.feature_names for nd in network.node_definition_list]
+        for nprn, nd in zip(node_pr_names, network.node_definition_list):
+            nprn.remove(nd.id_feature.name)
+        # Get the names of the node id-features.
+        node_id_names = [n.id_feature.name for n in network.node_definition_list]
+        node_b_pr = tuple([
+            n.node_list[pr].to_numpy()
+            for n, pr in zip(network.node_definition_list, node_pr_names)
+            if len(n.tensor_definition.binary_features()) > 0
+        ])
+        # Find the Binary node Features
+        node_b_pr_lst = [n for n in network.node_definition_list if len(n.tensor_definition.binary_features()) > 0]
+        node_b_pr_ind = np.array([
+            node_b_pr_lst.index(n) if n in node_b_pr_lst else -1 for n in network.node_definition_list
+        ], dtype=np.int8)
+
+        node_c_pr = tuple([
+            n.node_list[pr].to_numpy()
+            for n, pr in zip(network.node_definition_list, node_pr_names)
+            if len(n.tensor_definition.continuous_features()) > 0
+        ])
+        node_c_pr_lst = [n for n in network.node_definition_list if len(n.tensor_definition.continuous_features()) > 0]
+        node_c_pr_ind = np.array([
+            node_c_pr_lst.index(n) if n in node_c_pr_lst else -1
+            for n in network.node_definition_list
+        ], dtype=np.int8)
+
         node_gr_pr = [FeatureHelper.filter_feature(FeatureGrouper, t.features) for t in node_tensor_definition]
         node_st_def = [
-            ProfileNumpyStore(g, n.node_list[n_id].to_numpy())
+            ProfileNumpyStore(g, n.node_list[n_id].to_numpy()) if len(g) > 0 else None
             for g, n_id, n in zip(node_gr_pr, node_id_names, network.node_definition_list)
         ]
         edge_pr_names = [
@@ -900,7 +925,10 @@ class EnginePandasNumpy(EngineContext):
              if f != e.id_feature and f != e.from_node_id and f != e.to_node_id and f != time_feature]
             for e in network.edge_definition_list
         ]
-        edge_pr = tuple([e.edge_list[pr].to_numpy() for e, pr in zip(network.edge_definition_list, edge_pr_names)])
+        edge_pr = tuple([
+            e.edge_list[pr].to_numpy()
+            for e, pr in zip(network.edge_definition_list, edge_pr_names) if len(pr) > 0
+        ])
         edge_ind = tuple([network.replace_by_index(e) for e in network.edge_definition_list])
         node_names = [n.name for n in network.node_definition_list]
         edge_node_ind = np.array([
@@ -908,17 +936,17 @@ class EnginePandasNumpy(EngineContext):
             for e in network.edge_definition_list
         ])
         enw = _numba_to_ego_networks(
-            hops, node_pr, edge_pr, edge_ind, edge_node_ind,
-            tuple([node_st_def[0].profile.get_deltas(e.edge_list, time_feature, cumulative=True)
+            hops, node_b_pr, node_b_pr_ind, node_c_pr, node_c_pr_ind, edge_pr, edge_ind, edge_node_ind,
+            tuple([ProfileNumpy.get_deltas(e.edge_list, time_feature, cumulative=True)
                    for e in network.edge_definition_list]),
-            tuple([nsd.profile.base_filters for nsd in node_st_def]),
-            tuple([nsd.profile.feature_filters for nsd in node_st_def]),
-            tuple([nsd.profile.aggregator_indexes for nsd in node_st_def]),
-            tuple([nsd.profile.filter_indexes for nsd in node_st_def]),
-            tuple([nsd.profile.timeperiod_filters for nsd in node_st_def]),
-            tuple([nsd.profile.time_windows for nsd in node_st_def]),
+            tuple([nsd.profile.base_filters if nsd is not None else np.zeros((0,)) for nsd in node_st_def]),
+            tuple([nsd.profile.feature_filters if nsd is not None else np.zeros((0,)) for nsd in node_st_def]),
+            tuple([nsd.profile.aggregator_indexes if nsd is not None else np.zeros((0,)) for nsd in node_st_def]),
+            tuple([nsd.profile.filter_indexes if nsd is not None else np.zeros((0,)) for nsd in node_st_def]),
+            tuple([nsd.profile.timeperiod_filters if nsd is not None else np.zeros((0,)) for nsd in node_st_def]),
+            tuple([nsd.profile.time_windows if nsd is not None else np.zeros((0,)) for nsd in node_st_def]),
             tuple([len(g) for g in node_gr_pr]),
-            tuple([nsd.new_store_array() for nsd in node_st_def])
+            tuple([nsd.new_store_array() for nsd in node_st_def if nsd is not None])
         )
         return enw
 
@@ -1197,7 +1225,7 @@ class _FeatureProcessor:
                     same_key.to_numpy(),
                     df[[f.name for f in p.base_features]].to_numpy(),
                     df[[f.name for f in p.filter_features]].to_numpy(),
-                    p.get_deltas(df, time_feature), p.base_filters, p.feature_filters, p.timeperiod_filters,
+                    ProfileNumpy.get_deltas(df, time_feature), p.base_filters, p.feature_filters, p.timeperiod_filters,
                     p.aggregator_indexes, p.filter_indexes, p.time_windows, len(gf), p.array_shape
                 )
                 ags = pd.DataFrame(
@@ -1233,7 +1261,7 @@ class _FeatureProcessor:
             np.ones(len(rows), dtype=np.bool),
             rows[[f.name for f in p.base_features]].to_numpy(),
             rows[[f.name for f in p.filter_features]].to_numpy(),
-            p.get_deltas(rows, time_feature), p.base_filters, p.feature_filters, p.timeperiod_filters,
+            ProfileNumpy.get_deltas(rows, time_feature), p.base_filters, p.feature_filters, p.timeperiod_filters,
             p.aggregator_indexes, p.filter_indexes, p.time_windows, len(group_features), p.array_shape
         )
         ags = pd.DataFrame(
@@ -1416,8 +1444,13 @@ def _numba_process_frequencies(same_key: np.ndarray, base_values: np.ndarray, fi
 
 @jit(nopython=True, cache=True)
 def _numba_to_ego_networks(hops: int,
-                           node_properties: Tuple[np.ndarray, ...], edge_properties: Tuple[np.ndarray, ...],
-                           edge_indexes: Tuple[np.ndarray, ...], edge_node_indexes: np.ndarray,
+                           node_properties_binary: Tuple[np.ndarray, ...],
+                           node_properties_binary_indexes: np.ndarray,
+                           node_properties_continuous: Tuple[np.ndarray, ...],
+                           node_properties_continuous_indexes: np.ndarray,
+                           edge_properties: Tuple[np.ndarray, ...],
+                           edge_indexes: Tuple[np.ndarray, ...],
+                           edge_node_indexes: np.ndarray,
                            deltas: Tuple[np.ndarray, ...],
                            b_flt: Tuple[np.ndarray, ...],
                            f_flt: Tuple[np.ndarray, ...],
@@ -1428,69 +1461,62 @@ def _numba_to_ego_networks(hops: int,
                            node_store: Tuple[np.ndarray, ...]) -> Tuple[List[np.ndarray], ...]:
     # Allocate output structure for the node features
     out_n_g_f = [np.zeros((0, c), dtype=np.float32) for c in group_feature_count]
-    out_n_s_f = [np.zeros((0, p.shape[1]), dtype=p.dtype) for p in node_properties]
-    out_n_id = [np.zeros((0,), dtype=np.uint32) for _ in group_feature_count]
-    out_n_idx = [np.zeros((0,), dtype=np.uint8) for _ in group_feature_count]
+    out_n_id = [np.zeros((0,), dtype=np.uint32) for _ in range(len(node_properties_binary_indexes))]
 
     # Allocate output structures for the edges
-    out_e = [np.zeros((0, 2), dtype=np.float32) for _ in edge_properties]
     out_e_id = [np.zeros((0,), dtype=np.uint32) for _ in edge_properties]
-    out_e_idx = [np.zeros((0,), dtype=np.uint8) for _ in edge_properties]
 
     # Allocate a structure to keep the last update delta per each entry in the profile store
-    delta_store = [np.zeros((ns.shape[0], 3), dtype=np.int32) for ns in node_store]
+    if len(node_store) > 0:
+        delta_store = [np.zeros((ns.shape[0], 3), dtype=np.int32) for ns in node_store]
+    else:
+        delta_store = [np.zeros((0, 3), dtype=np.int32)]
+
+    node_indexes = np.unique(edge_node_indexes)
 
     for i in range(len(edge_indexes[0])):
         for j in range(len(edge_properties)):
             e_i = edge_indexes[j][i]
             e_p = edge_properties[j][i, 0]
             # Update the node features for both from and to node
-            for tf in range(2):
-                ni = edge_node_indexes[j, tf]
-                if node_store[ni].shape[0] != 0:
-                    profile_time_logic(tp_flt[ni], deltas[ni][i], node_store[ni][e_i[tf]])
-                    profile_contrib(
-                        b_flt[ni], f_ind[ni], np.array(e_p).reshape((1,)), np.array([0]), node_store[ni][e_i[tf]]
-                    )
-                    delta_store[ni][e_i[tf]] = deltas[ni][i]
-            # Create an ego network around the 'from' node. This will return a unique list of indexes per node-type
-            ego_n, ego_e = _numba_create_ego_net(i, hops, 3, deltas, edge_indexes, edge_node_indexes)
-            # Now get all the properties for each node
-            out_ego_n = [np.zeros((ego_n[i].shape[0], c), dtype=np.float32) for i, c in enumerate(group_feature_count)]
-            out_ego_e = [np.zeros((ego_e[i].shape[0], 2), dtype=np.float32) for i, _ in enumerate(group_feature_count)]
-            for s in range(len(node_store)):
-                for n in range(ego_n[s].shape[0]):
-                    delta = deltas[s][i] - delta_store[s][ego_n[s][n]]
-                    profile_time_logic(tp_flt[s], delta, node_store[s][ego_n[s][n]])
-                    out_ego_n[s][n] = profile_aggregate(f_flt[s], a_ind[s], tw[s], node_store[s][ego_n[s][n]])
-            # Build output, first add the nodes
-            for e in range(len(out_ego_n)):
-                out_n_idx[e] = np.concatenate((
-                    out_n_idx[e],
-                    np.full((out_ego_n[e].shape[0],), e,  dtype=np.uint8)
-                ), axis=0)
-                out_n_id[e] = np.concatenate((
-                    out_n_id[e],
-                    np.full((sum([out_ego_n[e].shape[0] for e in range(len(out_ego_n))]),), i, dtype=np.uint32)
-                ), axis=0)
-                out_n_g_f[e] = np.concatenate((out_n_g_f[e], out_ego_n[e]), axis=0)
-                out_n_s_f[e] = np.concatenate((out_n_s_f[e], node_properties[e][ego_n[e]]), axis=0)
-            # The add the edges
-            for e in range(len(out_ego_e)):
-                out_e_idx[e] = np.concatenate((
-                    out_e_idx[e],
-                    np.full((out_ego_e[e].shape[0],), e, dtype=np.uint8)
-                ))
-                out_e_id[e] = np.concatenate((
-                    out_e_id[e],
-                    np.full((sum([out_ego_e[e].shape[0] for e in range(len(out_ego_e))]),), i, dtype=np.uint32)
-                ), axis=0)
-                out_e[e] = np.concatenate((out_e[e], out_ego_e[e]), axis=0)
+            # for tf in range(2):
+            #     ni = edge_node_indexes[j, tf]
+            #     if len(node_store) > ni and node_store[ni].shape[0] != 0:
+            #         profile_time_logic(tp_flt[ni], deltas[ni][i], node_store[ni][e_i[tf]])
+            #         profile_contrib(
+            #             b_flt[ni], f_ind[ni], np.array(e_p).reshape((1,)), np.array([0]), node_store[ni][e_i[tf]]
+            #         )
+            #         delta_store[ni][e_i[tf]] = deltas[ni][i]
+        # Create an ego network around the 'from' node. This will return a unique list of indexes per node-type
+        ego_n, ego_e = _numba_create_ego_net(i, hops, 3, deltas, edge_indexes, edge_node_indexes)
+        # Now get all the properties for each node
+        out_ego_n_g = [np.zeros((ego_n[i].shape[0], c), dtype=np.float32) for i, c in enumerate(group_feature_count)]
+        out_ego_e = [np.zeros((ego_e[i].shape[0], 2), dtype=np.float32) for i, _ in enumerate(group_feature_count)]
+        # Get the Group features for the nodes in the ego-network
+        # for s in range(len(node_store)):
+        #     for n in range(ego_n[s].shape[0]):
+        #         delta = deltas[s][i] - delta_store[s][ego_n[s][n]]
+        #         profile_time_logic(tp_flt[s], delta, node_store[s][ego_n[s][n]])
+        #         out_ego_n_g[s][n] = profile_aggregate(f_flt[s], a_ind[s], tw[s], node_store[s][ego_n[s][n]])
+        # Build output, first add the nodes
+        for e in range(len(node_indexes)):
+            out_n_id[e] = np.concatenate((
+                out_n_id[e],
+                np.full((ego_n[e].shape[0],), i, dtype=np.uint32)
+            ), axis=0)
+            # Needs a for loop
+            # out_n_g_f[e] = np.concatenate((out_n_g_f[e], out_ego_n_g[e]), axis=0)
+        # Then add the edges
+        for e in range(len(out_ego_e)):
+            out_e_id[e] = np.concatenate((
+                out_e_id[e],
+                np.full((sum([out_ego_e[e].shape[0] for e in range(len(out_ego_e))]),), i, dtype=np.uint32)
+            ), axis=0)
 
-    return out_n_id, out_n_idx, out_n_g_f, out_e_id, out_e_idx, out_e
+    return out_n_id, out_n_g_f, out_e_id
 
 
-@jit(nopython=True, cache=True)
+@nb.jit(nopython=True, cache=True)
 def _numba_create_ego_net(i: int, number_of_hops: int, look_back_days: int,
                           deltas: Tuple[np.ndarray],
                           edge_indexes: Tuple[np.ndarray, ...],
@@ -1508,7 +1534,7 @@ def _numba_create_ego_net(i: int, number_of_hops: int, look_back_days: int,
             flt_f = np.zeros((edge_indexes[ei].shape[0],), dtype=np.bool_)
             flt_t = np.zeros((edge_indexes[ei].shape[0],), dtype=np.bool_)
             start = np.searchsorted(deltas[ei][:, 0], deltas[ei][i, 0] - look_back_days)
-            for j in prange(start, i+1):
+            for j in nb.prange(start, i+1):
                 flt_f[j] = _numba_is_in_edge_index(edge_indexes[ei][j, 0], n_indexes[edge_node_indexes[ei, 0]])
                 flt_t[j] = _numba_is_in_edge_index(edge_indexes[ei][j, 1], n_indexes[edge_node_indexes[ei, 1]])
 
@@ -1525,14 +1551,15 @@ def _numba_create_ego_net(i: int, number_of_hops: int, look_back_days: int,
     return n_indexes, e_indexes
 
 
-@jit(nopython=True, cache=True)
-def _numba_is_in_edge_index(index: np.ndarray, indexes: np.ndarray) -> bool:
+@nb.jit(nb.uint32(nb.uint32, nb.uint32[:]), nopython=True, cache=True)
+def _numba_is_in_edge_index(index: int, indexes: np.ndarray) -> bool:
     """
     Small 'isin()' function. Numba does not seem to support the numpy built-in isin.
     Args:
-        index (np.ndarray): Numpy array of shape(x,) containing a set of indexes. This is the look-up list
-        indexes (np.ndarray): Numpy array of shape (1,). One row and one column of an edge_index list. So this is either
-            the 'from' or the 'to' node for a specific entry of the edge_index list
+
+        index (int): The index value to look-up
+        indexes (np.ndarray): Numpy array of shape(x,) containing a set of indexes. This is the look-up list in which
+            the index is checked.
     Returns:
         bool. True if either the index value is in the indexes
 

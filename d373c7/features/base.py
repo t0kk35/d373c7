@@ -184,3 +184,4 @@ class FeatureConcat(FeatureWithBaseFeature):
                 f'The concat feature {self.concat_feature.name} of a FeatureRatio should be a string. ' +
                 f'Got {self.concat_feature.type} '
             )
+

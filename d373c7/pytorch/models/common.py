@@ -19,13 +19,16 @@ from math import log, ceil, floor
 
 
 class PyTorchModelException(Exception):
-    """Standard exception raised during training"""
+    """
+    Standard exception raised during training
+    """
     def __init__(self, message: str):
         super().__init__('Error in Model: ' + message)
 
 
 class ModelDefaults:
-    """Object where model defaults can be stored. This will avoid having too many parameters in each model creation.
+    """
+    Object where model defaults can be stored. This will avoid having too many parameters in each model creation.
     """
     @staticmethod
     def _val_not_none(value: Optional[Any], key: str):
@@ -81,20 +84,28 @@ class _Model(nn.Module):
         raise NotImplemented('Abstract method _forward_unimplemented not implemented')
 
     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
-        """Get the values that are considered the x values. I.e the independent variables, I.e. NOT the label.
+        """
+        Get the values that are considered the x values. I.e the independent variables, I.e. NOT the label.
 
-        :param ds: A list of tensors as read from a DataLoader object.
-        :return: A list of tensors to be used as input to a neural net.
+        Args:
+            ds: A list of tensors as read from a DataLoader object.
+
+        Return:
+            A list of tensors to be used as input to a neural net.
         """
         raise NotImplemented(
             f'get_x method not unimplemented in {self.__class__.name}. Children of _Model should implement this method'
         )
 
     def get_y(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
-        """Get the values that are considered the y values. I.e. the dependent variable, I.e. the label
+        """
+        Get the values that are considered the y values. I.e. the dependent variable, I.e. the label
 
-        :param ds: A list of tensors as read from a DataLoader object.
-        :return: A list of tensors to be use as label for the neural net.
+        Args:
+            ds: A list of tensors as read from a DataLoader object.
+
+        Return:
+            A list of tensors to be use as label for the neural net.
         """
         raise NotImplemented(
             f'get_y method not unimplemented in {self.__class__.name}. Children of _Model should implement this method'
@@ -167,9 +178,10 @@ class _ModelManager:
 
 
 class _ModelStream:
-    """Class used in Generator models to set-up a set of layers to be executed sequentially. This is not an nn.Module.
-    It's just a place-holder class to bundle the layers. By calling the create, an nn.Sequential will be returned which
-    can be used in models.
+    """
+    Class used in Generator models to setup a set of layers to be executed sequentially. This is not an nn.Module.
+    It's just a place-holder class to bundle the layers. By calling the create method,
+    a nn.Sequential will be returned which can be used in models.
 
     Args:
         name: A name for the Stream.
@@ -177,7 +189,7 @@ class _ModelStream:
     """
     def __init__(self, name: str, layer: Layer = None):
         self.name = name
-        self._layers = OrderedDict()
+        self._layers: Dict[str, Layer] = OrderedDict[str, Layer]()
         if layer is not None:
             self._layers.update({name: layer})
             self._out_size = layer.output_size
@@ -214,7 +226,7 @@ class _ModelGenerated(_Model):
     It also has some common helper functions.
 
     Args:
-        tensor_def: A TensorDefinitionMulti object. Needed to know how the set up and use the heads of the model.
+        tensor_def: A TensorDefinitionMulti object. Needed to know how the set-up and use the heads of the model.
         defaults: A ModelDefaults object containing the defaults to be used.
     """
     def __init__(self, tensor_def: TensorDefinitionMulti, defaults: ModelDefaults):
@@ -257,7 +269,6 @@ class _ModelGenerated(_Model):
     def unfreeze(self):
         for p in self.parameters():
             p.requires_grad = True
-
 
     @property
     def head_indexes(self) -> List[Tuple[int]]:

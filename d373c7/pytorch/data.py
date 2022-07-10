@@ -62,16 +62,20 @@ class _BaseNumpyListDataSet(data.Dataset):
 
     def data_loader(self, device: torch.device, batch_size: int, num_workers: int = 1,
                     shuffle: bool = False, sampler: data.Sampler = None) -> data.DataLoader:
-        """Create a Pytorch Data-loader for the underlying Data-set.
+        """
+        Create a Pytorch Data-loader for the underlying Data-set.
 
-        :param device: The Pytorch device on which to create the data. Either CPU or GPU. Note that if the the device is
-            set to GPU only one worker can be used.
-        :param batch_size: The batch size for the Data-loader.
-        :param num_workers: Number of workers to use in the Data-loader. Default = 1. If more than one worker is
-            defined the device will default to 'cpu' because 'cuda' devices do not support multiple workers.
-        :param shuffle: Flag to trigger random shuffling of the dataset. Default = False
-        :param sampler: Sampler to use. Optional. Needs to be an instance of a Sampler (from the Pytorch library.
-        :return: A Pytorch data-loader for this data-set. Ready to train.
+        Args:
+            device: The Pytorch device on which to create the data. Either CPU or GPU. Note that if the the device is
+                set to GPU only one worker can be used.
+            batch_size: The batch size for the Data-loader.
+            num_workers: Number of workers to use in the Data-loader. Default = 1. If more than one worker is
+                defined the device will default to 'cpu' because 'cuda' devices do not support multiple workers.
+            shuffle: Flag to trigger random shuffling of the dataset. Default = False
+            sampler: Sampler to use. Optional. Needs to be an instance of a Sampler (from the Pytorch library.
+
+        Returns:
+            A Pytorch data-loader for this data-set. Ready to train.
         """
         # Cuda does not support multiple workers. Override if GPU
         if num_workers > 1:
@@ -91,9 +95,10 @@ class _BaseNumpyListDataSet(data.Dataset):
 
 
 class NumpyListDataSet(_BaseNumpyListDataSet):
-    """Custom PyTorch 'Dataset' for numpy lists. The idea is that the data is kept in original numpy. Normally in the
+    """
+    Custom PyTorch 'Dataset' for numpy lists. The idea is that the data is kept in original numpy. Normally in the
     most condensed form. The numpy arrays are converted to Pytorch tensors on the fly, as each row is requested. This
-    create a bit of CPU overhead, but as the numpy arrays should be more condensed, (the PyTorch tensors are mainly
+    creates a bit of CPU overhead, but as the numpy arrays should be more condensed, (the PyTorch tensors are mainly
     float32 and long), it should allow keeping more data in memory.
 
     Args:
@@ -107,9 +112,10 @@ class NumpyListDataSet(_BaseNumpyListDataSet):
 
 
 class NumpyListDataSetMulti(_BaseNumpyListDataSet):
-    """Custom PyTorch 'Dataset' for numpy lists. The idea is that the data is kept in original numpy. Normally in the
+    """
+    Custom PyTorch 'Dataset' for numpy lists. The idea is that the data is kept in original numpy. Normally in the
     most condensed form. The numpy arrays are converted to Pytorch tensors on the fly, as each row is requested. This
-    create a bit of CPU overhead, but as the numpy arrays should be more condensed, (the PyTorch tensors are mainly
+    creates a bit of CPU overhead, but as the numpy arrays should be more condensed, (the PyTorch tensors are mainly
     float32 and long), it should allow keeping more data in memory.
     This version has multi-head support. It has a list of TensorDefinitions as input.
 
@@ -132,7 +138,8 @@ class NumpyListDataSetMulti(_BaseNumpyListDataSet):
 
 
 class ClassSampler:
-    """ Class for creating a sampler.
+    """
+    Class for creating a sampler.
 
     Args:
          npl: The Numpy List to sample.
@@ -151,11 +158,17 @@ class ClassSampler:
         self._tensor_def = tensor_definition
 
     def over_sampler(self, replacement=True) -> data.Sampler:
-        """Create a RandomWeightedSampler that balances out the classes. It'll more or less return an equal amount of
+        """
+        Create a RandomWeightedSampler that balances out the classes. It'll more or less return an equal amount of
         each class. For a binary fraud label this would mean about as much fraud as non-fraud samples.
 
-        :param replacement: Bool flag to trigger sample with replacement. With replacement a row can be drawn more
-        than once
+        Args:
+            replacement: Bool flag to trigger sample with replacement. With replacement a row can be drawn more
+                than once
+
+        Returns:
+            A Pytorch Sampler
+
         """
         label_index = self._tensor_def.learning_categories.index(LEARNING_CATEGORY_LABEL)
         _, class_balance = self._npl.unique(label_index)
@@ -171,7 +184,8 @@ class ClassSampler:
 
 
 class ClassSamplerMulti(ClassSampler):
-    """ Class for creating a sampler.
+    """
+    Class for creating a sampler.
 
     Args:
          tensor_definitions: The TensorDefinitionMultiHead used to create the numpy List

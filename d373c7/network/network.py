@@ -4,7 +4,7 @@ Network classes
 """
 from abc import ABC, abstractmethod
 
-from common import enforce_types
+from ..common import enforce_types
 
 from typing import TypeVar, Generic, List
 

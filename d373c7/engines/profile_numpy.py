@@ -123,8 +123,8 @@ class ProfileNumpy:
         # Not using set here to make unique because we want to keep the order
         return list(dict.fromkeys(lst))
 
-    @staticmethod
-    def get_deltas(df: pd.DataFrame, time_feature: Feature, cumulative: bool = False) -> np.ndarray:
+    @classmethod
+    def get_deltas(cls, df: pd.DataFrame, time_feature: Feature, cumulative: bool = False) -> np.ndarray:
         """
         Helper method to get all the time deltas from between the rows. It is needed as input to some Numba
         jit-ed functions.
@@ -140,14 +140,15 @@ class ProfileNumpy:
         Returns:
              A Numpy Array containing the deltas for all the TimePeriods.
         """
+        d_type = np.int16
         # This is a bit of repetition of the TimePeriod logic. Turns out it takes a long time if you vectorize those
         # functions. This is a more Numpy like approach
         # If we only have one row then return zero's. The shifting does not work with one row.
         if len(df) == 1:
-            return np.zeros((1, len(TIME_PERIODS)), dtype=np.int16)
+            return np.zeros((1, len(TIME_PERIODS)), dtype=d_type)
 
         # Allocate output structure
-        out = np.zeros((len(df), 3), dtype=np.int16)
+        out = np.zeros((len(df), 3), dtype=d_type)
         # Convert the time feature to a numpy array. This will contain datetime64 objects.
         npd = df[time_feature.name].to_numpy()
         # Day logic
@@ -161,7 +162,7 @@ class ProfileNumpy:
         out[1:, 2] = m[1:] - m[:-1]
 
         if cumulative:
-            return out.cumsum(axis=0)
+            return out.cumsum(axis=0, dtype=d_type)
         else:
             return out
 

@@ -48,10 +48,17 @@ class NetworkEdgeDefinitionPandas(NetworkEdgeDefinition[pd.DataFrame]):
 
 
 class NetworkDefinitionPandas(NetworkDefinition):
-    def __init__(self, name: str):
+    def __init__(self, name: str, nodes: List[NetworkNodeDefinitionPandas] = None,
+                 edges: List[NetworkEdgeDefinitionPandas] = None):
         super(NetworkDefinitionPandas, self).__init__(name)
-        self._nodes: List[NetworkNodeDefinitionPandas] = []
-        self._edges: List[NetworkEdgeDefinitionPandas] = []
+        if nodes is None:
+            self._nodes: List[NetworkNodeDefinitionPandas] = []
+        else:
+            self._nodes = nodes
+        if edges is None:
+            self._edges: List[NetworkEdgeDefinitionPandas] = []
+        else:
+            self._edges = edges
 
     def add_node_definition(self, node: NetworkNodeDefinitionPandas):
         self._nodes.append(node)
@@ -99,6 +106,13 @@ class NetworkDefinitionPandas(NetworkDefinition):
         for e in el:
             am[e[:, 0], e[:, 1]] = 1
         return am
+
+    def __repr__(self):
+        out = f"Name = {self.name}" +\
+              f"\n\t Nodes: {[n.name for n in self.node_definition_list]}" +\
+              f"\n\t Edges : {[e.name for e in self.edge_definition_list]}"
+        out.replace("\n", "\\n").replace("\t", "\\t")
+        return out
 
 
 # Some numba jit-ed functions
