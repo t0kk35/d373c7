@@ -189,7 +189,7 @@ class _ModelStream:
     """
     def __init__(self, name: str, layer: Layer = None):
         self.name = name
-        self._layers: Dict[str, Layer] = OrderedDict[str, Layer]()
+        self._layers: Dict[str, Layer] = OrderedDict()
         if layer is not None:
             self._layers.update({name: layer})
             self._out_size = layer.output_size

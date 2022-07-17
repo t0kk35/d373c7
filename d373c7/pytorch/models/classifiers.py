@@ -78,6 +78,7 @@ class ClassifierDefaults(ModelDefaults):
         self.inter_layer_drop_out = 0.1
         self.default_series_body = 'recurrent'
         self.attention_drop_out = 0.0
+        self.recurrent_dense = True
         self.convolutional_dense = True
         self.convolutional_drop_out = 0.1
         self.transformer_positional_logic = 'encoding'
@@ -174,6 +175,26 @@ class ClassifierDefaults(ModelDefaults):
         self.set('conv_body_dropout', dropout)
 
     @property
+    def recurrent_dense(self) -> bool:
+        """Defines if convolutional bodies are dense. Dense bodies mean that the input to the layer is added to the
+        output. It forms a sort of residual connection. The input is concatenated along the features axis. This
+        allows the model to work with the input if that turns out to be useful.
+
+        :return: A boolean value, indicating if the input will be added to the output or not.
+        """
+        return self.get_bool('recu_body_dense')
+
+    @recurrent_dense.setter
+    def recurrent_dense(self, dense: bool):
+        """Defines if convolutional bodies are dense. Dense bodies mean that the input to the layer is added to the
+        output. It forms a sort of residual connection. The input is concatenated along the features axis. This
+        allows the model to work with the input if that turns out to be useful.
+
+        :param dense: A boolean value, indicating if the input will be added to the output or not.
+        """
+        self.set('recu_body_dense', dense)
+
+    @property
     def convolutional_dense(self) -> bool:
         """Defines if convolutional bodies are dense. Dense bodies mean that the input to the layer is added to the
         output. It forms a sort of residual connection. The input is concatenated along the features axis. This
@@ -253,7 +274,8 @@ class GeneratedClassifier(_ModelGenerated):
     Args:
         tensor_def: A TensorDefinition or TensorDefinitionMulti object describing the various input and output features
         c_defaults: (Optional) ClassifierDefaults object defining the defaults which need to be used.
-        kwargs: Various named parameters which can be use to drive the type of classifier and the capacity of the model.
+        kwargs: Various named parameters which can be used to drive the type of classifier and the capacity of
+            the model.
     """
     def __init__(self, tensor_def: Union[TensorDefinition, TensorDefinitionMulti],
                  c_defaults=ClassifierDefaults(), **kwargs):
@@ -325,7 +347,7 @@ class GeneratedClassifier(_ModelGenerated):
         )
 
         self.tail = tail
-        # Last but not least, set-up the loss function
+        # Last but not least, set up the loss function
         self.set_loss_fn(SingleLabelBCELoss())
 
     def _add_body(self, stream: _ModelStream, tensor_def: TensorDefinition, kwargs: dict, defaults: ClassifierDefaults):
@@ -343,7 +365,7 @@ class GeneratedClassifier(_ModelGenerated):
             else:
                 body_type = defaults.default_series_body
 
-            # Set-up the body.
+            # Set up the body.
             if body_type.lower() == 'recurrent':
                 self._add_recurrent_body(stream, kwargs, defaults)
             elif body_type.lower() == 'convolutional':
@@ -367,7 +389,8 @@ class GeneratedClassifier(_ModelGenerated):
             attn = AttentionLastEntry(stream.out_size, attn_heads, rnn_features)
             stream.add('Attention', attn, attn.output_size)
         # Add main rnn layer
-        rnn = LSTMBody(stream.out_size, rnn_features, rnn_layers, True, False)
+        dense = defaults.recurrent_dense
+        rnn = LSTMBody(stream.out_size, rnn_features, rnn_layers, dense, False)
         stream.add('Recurrent', rnn, rnn.output_size)
 
     def _add_convolutional_body(self, stream: _ModelStream, tensor_def: TensorDefinition, kwargs: dict,

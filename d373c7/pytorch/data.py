@@ -191,6 +191,12 @@ class ClassSamplerMulti(ClassSampler):
          tensor_definitions: The TensorDefinitionMultiHead used to create the numpy List
          npl: The Numpy List to sample.
     """
+    @staticmethod
+    def _val_label_list_exists(tensor_definitions: TensorDefinitionMulti, npl: NumpyList):
+        if len(npl.multi_filter(tensor_definitions, tensor_definitions.label_tensor_definition)) == 0:
+            raise PyTorchTrainException(
+                f'Could not find the label list for {tensor_definitions.label_tensor_definition.name} in the NumpyList')
+
     def __init__(self, tensor_definitions: TensorDefinitionMulti, npl: NumpyList):
         # Create Sampler using the list that has the labels, filter out the list of numpy of that specific tensor def.
         td = tensor_definitions.label_tensor_definition

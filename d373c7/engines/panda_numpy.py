@@ -781,7 +781,7 @@ class EnginePandasNumpy(EngineContext):
                     sorted(gf, key=lambda x: (x[0].time_period, x[0].time_window)),
                     lambda x: (x[0].time_period, x[0].time_window)
                 )
-            )) for g, gf in groupby(sorted(gnf, key=lambda x: x[0].group_feature), lambda x: x[0].group_feature)
+            )) for g, gf in groupby(sorted(gnf, key=lambda x: x[0].group_feature.name), lambda x: x[0].group_feature)
         )
         # Create an 'unstacked' dataframe of the features. Do this first so it is ready for inference.
         f_features = target_tensor_def.embedded_features
@@ -866,6 +866,8 @@ class EnginePandasNumpy(EngineContext):
                 except KeyError:
                     series_dict[tpw] = series[i]
 
+            logger.info(f'Done creating aggregate grouper features for <{g.name}>.')
+
         # End for loop over dictionary
         # Normalize the frequencies
         for i, (tpw, a) in enumerate(series_dict.items()):
@@ -877,7 +879,13 @@ class EnginePandasNumpy(EngineContext):
             self._normalize_frequency(a, fn, inference)
 
         # Turn it into a NumpyList
-        return NumpyList([n for _, n in series_dict.items()])
+        series = NumpyList([n for _, n in series_dict.items()])
+        # Don't forget to set the Rank and shape
+        target_tensor_def.rank = 3
+        target_tensor_def.shapes = [(-1, *s[1:]) for s in series.shapes]
+        logger.info(f'Done creating {target_tensor_def.name}. Shapes={series.shapes}')
+
+        return series
 
     def to_networks_ego(self, network: NetworkDefinitionPandas, time_feature: Feature,
                         node_tensor_definition: List[TensorDefinition],
