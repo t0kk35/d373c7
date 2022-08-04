@@ -85,7 +85,7 @@ class _Model(nn.Module):
 
     def get_x(self, ds: List[torch.Tensor]) -> List[torch.Tensor]:
         """
-        Get the values that are considered the x values. I.e the independent variables, I.e. NOT the label.
+        Get the values that are considered the x values. I.e. the independent variables, I.e. NOT the label.
 
         Args:
             ds: A list of tensors as read from a DataLoader object.
@@ -179,7 +179,7 @@ class _ModelManager:
 
 class _ModelStream:
     """
-    Class used in Generator models to setup a set of layers to be executed sequentially. This is not an nn.Module.
+    Class used in Generator models to set up a set of layers to be executed sequentially. This is not a nn.Module.
     It's just a place-holder class to bundle the layers. By calling the create method,
     a nn.Sequential will be returned which can be used in models.
 
@@ -189,7 +189,7 @@ class _ModelStream:
     """
     def __init__(self, name: str, layer: Layer = None):
         self.name = name
-        self._layers: Dict[str, Layer] = OrderedDict()
+        self._layers: OrderedDict[str, Layer] = OrderedDict()
         if layer is not None:
             self._layers.update({name: layer})
             self._out_size = layer.output_size
@@ -203,7 +203,7 @@ class _ModelStream:
     def create(self) -> Union[nn.Sequential, Layer]:
         if len(self.layers) == 1:
             # There is just one layer, return the first item from the Dict.
-            return next(iter(self._layers.values()))
+            return [v for _, v in self._layers.items()][0]
         else:
             # There is more than one layer. Build a nn.Sequential.
             return nn.Sequential(self._layers)
@@ -218,7 +218,7 @@ class _ModelStream:
 
     @property
     def layers(self) -> List[Layer]:
-        return list(self._layers.values())
+        return [v for _, v in self._layers.items()]
 
 
 class _ModelGenerated(_Model):
@@ -485,7 +485,7 @@ class _ModelGenerated(_Model):
 
         :return: A layer object which is the 'head' layer of the model
         """
-        # A stream can be a single layer or an nn.Sequential.
+        # A stream can be a single layer or a nn.Sequential.
         hd = [s[0] if hasattr(s, "__getitem__") else s for s in self.streams]
         if len(hd) == 0:
             raise PyTorchModelException(

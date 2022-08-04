@@ -1450,7 +1450,7 @@ def _numba_process_frequencies(same_key: np.ndarray, base_values: np.ndarray, fi
     return out
 
 
-@jit(nopython=True, cache=True)
+@nb.jit(nopython=True, cache=True)
 def _numba_to_ego_networks(hops: int,
                            node_properties_binary: Tuple[np.ndarray, ...],
                            node_properties_binary_indexes: np.ndarray,
@@ -1531,6 +1531,7 @@ def _numba_create_ego_net(i: int, number_of_hops: int, look_back_days: int,
                           edge_node_indexes: np.ndarray) -> Tuple[List[np.ndarray], List[np.ndarray]]:
     # Set-up an indexes array per each unique edge_node_index value
     eni = np.unique(edge_node_indexes)
+    max_nodes_per_hop = 10
     n_indexes = [np.zeros((1,), dtype=np.uint32) for _ in eni]
     # And for the edges.
     e_indexes = [np.zeros((0, 2), dtype=np.uint32) for _ in edge_indexes]
@@ -1546,15 +1547,19 @@ def _numba_create_ego_net(i: int, number_of_hops: int, look_back_days: int,
                 flt_f[j] = _numba_is_in_edge_index(edge_indexes[ei][j, 0], n_indexes[edge_node_indexes[ei, 0]])
                 flt_t[j] = _numba_is_in_edge_index(edge_indexes[ei][j, 1], n_indexes[edge_node_indexes[ei, 1]])
 
+            # Random select max_nodes per hop for the to-nodes. This should avoid making the neighborhoods too large.
+            flt_t_r = np.zeros_like(flt_t)
+            flt_t_r[np.random.permutation(np.nonzero(flt_t)[0])[:max_nodes_per_hop]] = True
+
             n_indexes[edge_node_indexes[ei, 1]] = np.unique(
                 np.hstack((n_indexes[edge_node_indexes[ei, 1]], edge_indexes[ei][:, 1][flt_f].flatten()))
             )
             n_indexes[edge_node_indexes[ei, 0]] = np.unique(
-                np.hstack((n_indexes[edge_node_indexes[ei, 0]], edge_indexes[ei][:, 0][flt_t].flatten()))
+                np.hstack((n_indexes[edge_node_indexes[ei, 0]], edge_indexes[ei][:, 0][flt_t_r].flatten()))
             )
             # On the last iteration set the edges.
             if h == number_of_hops - 1:
-                e_indexes[ei] = np.concatenate((e_indexes[ei], edge_indexes[ei][flt_t | flt_f]), axis=0)
+                e_indexes[ei] = np.concatenate((e_indexes[ei], edge_indexes[ei][flt_t_r | flt_f]), axis=0)
 
     return n_indexes, e_indexes
 
